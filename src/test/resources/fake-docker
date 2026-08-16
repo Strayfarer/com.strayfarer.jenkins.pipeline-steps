@@ -1,0 +1,56 @@
+#!/bin/sh
+
+log=$FAKE_DOCKER_LOG
+printf 'ARGS' >> "$log"
+for argument in "$@"; do
+    printf '|%s' "$argument" >> "$log"
+done
+printf '\n' >> "$log"
+
+case "$1" in
+    inspect)
+        for container do :; done
+        case "$container" in
+            missing) exit 1 ;;
+            stopped) printf 'id-stopped false linux\n' ;;
+            unsupported) printf 'id-unsupported true plan9\n' ;;
+            *) printf 'id-%s true linux\n' "$container" ;;
+        esac
+        ;;
+    exec)
+        shift
+        while [ "$#" -gt 0 ]; do
+            case "$1" in
+                --workdir)
+                    shift 2
+                    ;;
+                --env)
+                    name=$2
+                    value=$(printenv "$name")
+                    printf 'ENV|%s|%s\n' "$name" "$value" >> "$log"
+                    shift 2
+                    ;;
+                --)
+                    shift
+                    break
+                    ;;
+                *)
+                    shift
+                    ;;
+            esac
+        done
+        container=$1
+        shift
+        printf 'EXEC|%s\n' "$container" >> "$log"
+        case "$*" in
+            *pkill*)
+                printf 'KILL|%s\n' "$container" >> "$log"
+                exit 0
+                ;;
+        esac
+        exec "$@"
+        ;;
+    *)
+        exit 2
+        ;;
+esac

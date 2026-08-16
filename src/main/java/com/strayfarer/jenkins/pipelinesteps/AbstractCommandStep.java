@@ -1,21 +1,16 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
-import com.google.common.util.concurrent.ListenableFuture;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
-import hudson.model.Result;
 import hudson.model.TaskListener;
-import java.io.IOException;
 import java.util.Map;
 import java.util.Set;
 import org.jenkinsci.plugins.durabletask.DurableTask;
-import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
 import org.jenkinsci.plugins.workflow.steps.StepExecution;
-import org.jenkinsci.plugins.workflow.steps.durable_task.DurableTaskStep;
 import org.kohsuke.stapler.DataBoundSetter;
 
 abstract class AbstractCommandStep extends Step {
@@ -68,9 +63,14 @@ abstract class AbstractCommandStep extends Step {
         }
 
         ResultMode mode = resultMode();
-        DurableTask task = CommandTaskFactory.nativeTask(
-                script, context.get(Launcher.class), context.get(EnvVars.class), mode == ResultMode.STDOUT);
-        ConfiguredDurableTaskStep taskStep = new ConfiguredDurableTaskStep(task);
+        Launcher launcher = context.get(Launcher.class);
+        EnvVars environment = context.get(EnvVars.class);
+        DockerContext docker = context.get(DockerContext.class);
+        DurableTask task = docker == null
+                ? CommandTaskFactory.nativeTask(script, launcher, environment, mode == ResultMode.STDOUT)
+                : DockerCommandTaskFactory.task(
+                        docker, script, context.get(FilePath.class), launcher, environment, mode == ResultMode.STDOUT);
+        DurableTaskStepAdapter taskStep = new DurableTaskStepAdapter(task);
         taskStep.setEncoding(encoding);
         taskStep.setReturnStatus(mode == ResultMode.STATUS);
         taskStep.setReturnStdout(mode == ResultMode.STDOUT);
@@ -92,78 +92,17 @@ abstract class AbstractCommandStep extends Step {
         }
     }
 
-    private static final class ConfiguredDurableTaskStep extends DurableTaskStep {
-
-        private final DurableTask task;
-
-        private ConfiguredDurableTaskStep(DurableTask task) {
-            this.task = task;
-        }
-
-        @Override
-        protected DurableTask task() {
-            return task;
-        }
-    }
-
-    private static final class TrimmedOutputContext extends StepContext {
+    private static final class TrimmedOutputContext extends ForwardingStepContext {
 
         private static final long serialVersionUID = 1L;
 
-        private final StepContext delegate;
-
         private TrimmedOutputContext(StepContext delegate) {
-            this.delegate = delegate;
-        }
-
-        @Override
-        public <T> T get(Class<T> key) throws IOException, InterruptedException {
-            return delegate.get(key);
+            super(delegate);
         }
 
         @Override
         public void onSuccess(Object result) {
             delegate.onSuccess(result instanceof String ? ((String) result).trim() : result);
-        }
-
-        @Override
-        public void onFailure(Throwable failure) {
-            delegate.onFailure(failure);
-        }
-
-        @Override
-        public boolean isReady() {
-            return delegate.isReady();
-        }
-
-        @Override
-        public ListenableFuture<Void> saveState() {
-            return delegate.saveState();
-        }
-
-        @Override
-        public void setResult(Result result) {
-            delegate.setResult(result);
-        }
-
-        @Override
-        public BodyInvoker newBodyInvoker() throws IllegalStateException {
-            return delegate.newBodyInvoker();
-        }
-
-        @Override
-        public boolean hasBody() {
-            return delegate.hasBody();
-        }
-
-        @Override
-        public boolean equals(Object object) {
-            return object instanceof TrimmedOutputContext && delegate.equals(((TrimmedOutputContext) object).delegate);
-        }
-
-        @Override
-        public int hashCode() {
-            return delegate.hashCode();
         }
     }
 }
