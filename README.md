@@ -206,9 +206,9 @@ Unity initialization can distinguish a replaced sidecar through
 
 ## Development
 
-The scaffold uses Maven, Java 17, and the Jenkins plugin parent POM. The
-provisional minimum Jenkins version is 2.555.3 and should be checked against the
-target controllers before the first release.
+The scaffold uses Maven 3.9.6 or newer, Java 21, and the Jenkins plugin parent
+POM. The provisional minimum Jenkins version is 2.555.3 and should be checked
+against the target controllers before the first release.
 
 ```shell
 mvn verify
