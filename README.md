@@ -211,9 +211,11 @@ POM. The provisional minimum Jenkins version is 2.555.3 and should be checked
 against the target controllers before the first release.
 
 ```shell
-mvn verify
-mvn hpi:run
+./mvnw verify
+./mvnw hpi:run
 ```
+
+On Windows, use `mvnw.cmd` instead of `./mvnw`.
 
 Planned verification includes Jenkins test-harness Pipeline tests, restart and
 abort tests, concurrent and nested container scopes, Linux and Windows agents,
