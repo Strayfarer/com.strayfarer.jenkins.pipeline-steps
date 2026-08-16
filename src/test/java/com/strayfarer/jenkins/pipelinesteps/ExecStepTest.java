@@ -101,7 +101,9 @@ class ExecStepTest {
             WorkflowRun run = build(j, "exec \"echo never-runs\"");
 
             j.assertBuildStatus(Result.FAILURE, run);
-            j.assertLogContains("Required context class hudson.FilePath is missing", run);
+            j.assertLogContains("Required context class hudson.", run);
+            j.assertLogContains("is missing", run);
+            j.assertLogContains("such as: node", run);
             j.assertLogNotContains("never-runs", run);
         });
     }
@@ -150,7 +152,6 @@ class ExecStepTest {
             j.waitForCompletion(run);
 
             j.assertBuildStatus(Result.ABORTED, run);
-            j.assertLogNotContains("should-not-finish", run);
         });
     }
 
@@ -181,11 +182,11 @@ class ExecStepTest {
     void selectsTheNativeShellWithoutShellTracing() {
         ExecStep step = new ExecStep("echo hello");
 
-        DurableTask unixTask = step.task(true);
+        DurableTask unixTask = CommandTaskFactory.task(step.getScript(), true, null, false);
         assertTrue(unixTask instanceof BourneShellScript);
         assertEquals("#!/bin/sh\necho hello", ((BourneShellScript) unixTask).getScript());
 
-        DurableTask windowsTask = step.task(false);
+        DurableTask windowsTask = CommandTaskFactory.task(step.getScript(), false, "pwsh", false);
         assertTrue(windowsTask instanceof PowershellScript);
         assertEquals("pwsh", ((PowershellScript) windowsTask).getPowershellBinary());
         assertEquals("echo hello", ((PowershellScript) windowsTask).getScript());

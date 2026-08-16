@@ -4,17 +4,17 @@ import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import org.kohsuke.stapler.DataBoundConstructor;
 
-/** Streams a command's output and fails when it exits nonzero. */
-public final class ExecStep extends AbstractCommandStep {
+/** Streams a command's output and returns its exit status. */
+public final class ExecStatusStep extends AbstractCommandStep {
 
     @DataBoundConstructor
-    public ExecStep(String script) {
+    public ExecStatusStep(String script) {
         super(script);
     }
 
     @Override
     ResultMode resultMode() {
-        return ResultMode.NONE;
+        return ResultMode.STATUS;
     }
 
     @Extension
@@ -23,12 +23,12 @@ public final class ExecStep extends AbstractCommandStep {
         @NonNull
         @Override
         public String getDisplayName() {
-            return "Execute command";
+            return "Execute command and return status";
         }
 
         @Override
         public String getFunctionName() {
-            return "exec";
+            return "execStatus";
         }
     }
 }
