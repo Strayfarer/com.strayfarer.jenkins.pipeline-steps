@@ -25,7 +25,7 @@ particular, Unity project and package Pipelines remain in their Shared Library.
 ## Command execution
 
 All command steps require a Jenkins node and workspace. Linux commands run
-through `/bin/sh`; Windows commands run through PowerShell 7 (`pwsh`). UTF-8 is
+through `/bin/sh`; Windows commands run through PowerShell (`pwsh` if available, `powershell` otherwise). UTF-8 is
 the default encoding.
 
 ### `exec`
