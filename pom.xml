@@ -45,6 +45,7 @@
     <changelist>-SNAPSHOT</changelist>
     <scmTag>HEAD</scmTag>
     <jenkins.version>2.555.3</jenkins.version>
+    <palantir.java.format.version>2.96.0</palantir.java.format.version>
     <spotless.check.skip>false</spotless.check.skip>
   </properties>
 
@@ -104,4 +105,28 @@
       <url>https://repo.jenkins-ci.org/public/</url>
     </pluginRepository>
   </pluginRepositories>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <configuration>
+          <java combine.self="override">
+            <endWithNewline />
+            <forbidWildcardImports />
+            <importOrder />
+            <indent>
+              <spaces>true</spaces>
+            </indent>
+            <palantirJavaFormat>
+              <version>${palantir.java.format.version}</version>
+            </palantirJavaFormat>
+            <removeUnusedImports />
+            <trimTrailingWhitespace />
+          </java>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 </project>

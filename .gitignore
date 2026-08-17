@@ -4,7 +4,9 @@ target/
 .project
 .settings/
 
-.idea/
+.idea/*
+!.idea/externalDependencies.xml
+!.idea/palantir-java-format.xml
 *.iml
 
 .vscode/
