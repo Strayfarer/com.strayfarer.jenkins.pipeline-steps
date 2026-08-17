@@ -1,5 +1,6 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -11,12 +12,14 @@ import hudson.model.TaskListener;
 import hudson.remoting.VirtualChannel;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
+import java.io.Serial;
 import java.io.Serializable;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.steps.DynamicContext;
 
 final class NodeExecutionContext implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     private final NodeQueueTask task;
@@ -91,7 +94,7 @@ final class NodeExecutionContext implements Serializable {
     public static final class FilePathTranslator extends Translator<FilePath> {
 
         @Override
-        protected Class<FilePath> type() {
+        protected @NonNull Class<FilePath> type() {
             return FilePath.class;
         }
 
@@ -105,7 +108,7 @@ final class NodeExecutionContext implements Serializable {
     public static final class LauncherTranslator extends Translator<Launcher> {
 
         @Override
-        protected Class<Launcher> type() {
+        protected @NonNull Class<Launcher> type() {
             return Launcher.class;
         }
 
@@ -124,7 +127,7 @@ final class NodeExecutionContext implements Serializable {
     public static final class ComputerTranslator extends Translator<Computer> {
 
         @Override
-        protected Class<Computer> type() {
+        protected @NonNull Class<Computer> type() {
             return Computer.class;
         }
 
@@ -138,7 +141,7 @@ final class NodeExecutionContext implements Serializable {
     public static final class NodeTranslator extends Translator<Node> {
 
         @Override
-        protected Class<Node> type() {
+        protected @NonNull Class<Node> type() {
             return Node.class;
         }
 
@@ -152,7 +155,7 @@ final class NodeExecutionContext implements Serializable {
     public static final class ExecutorTranslator extends Translator<Executor> {
 
         @Override
-        protected Class<Executor> type() {
+        protected @NonNull Class<Executor> type() {
             return Executor.class;
         }
 
@@ -166,7 +169,7 @@ final class NodeExecutionContext implements Serializable {
     public static final class LeaseTranslator extends Translator<WorkspaceList.Lease> {
 
         @Override
-        protected Class<WorkspaceList.Lease> type() {
+        protected @NonNull Class<WorkspaceList.Lease> type() {
             return WorkspaceList.Lease.class;
         }
 

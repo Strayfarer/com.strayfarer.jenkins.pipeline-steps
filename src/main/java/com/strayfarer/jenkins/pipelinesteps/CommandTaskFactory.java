@@ -16,13 +16,13 @@ final class CommandTaskFactory {
     private CommandTaskFactory() {}
 
     static DurableTask nativeTask(String script, Launcher launcher, EnvVars environment, boolean teeStdout)
-            throws IOException, InterruptedException {
+            throws InterruptedException {
         if (launcher.isUnix()) {
             return task(script, true, null, teeStdout);
         }
         boolean pwshAvailable;
         try {
-            pwshAvailable = commandExists("pwsh", launcher, environment);
+            pwshAvailable = pwshExists(launcher, environment);
         } catch (IOException exception) {
             pwshAvailable = false;
         }
@@ -50,10 +50,9 @@ final class CommandTaskFactory {
         return available.test("pwsh") ? "pwsh" : "powershell";
     }
 
-    private static boolean commandExists(String command, Launcher launcher, EnvVars environment)
-            throws IOException, InterruptedException {
+    private static boolean pwshExists(Launcher launcher, EnvVars environment) throws IOException, InterruptedException {
         return launcher.launch()
-                        .cmds(command, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0")
+                        .cmds("pwsh", "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "exit 0")
                         .envs(environment)
                         .quiet(true)
                         .stdout(OutputStream.nullOutputStream())

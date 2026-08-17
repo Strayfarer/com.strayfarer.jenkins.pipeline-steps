@@ -6,6 +6,7 @@ import hudson.Extension;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -39,6 +40,7 @@ public final class InsideDockerContainerStep extends Step {
         this.container = container;
     }
 
+    @SuppressWarnings("unused") // Jenkins databinding reads this property reflectively.
     public String getContainer() {
         return container;
     }
@@ -110,6 +112,7 @@ public final class InsideDockerContainerStep extends Step {
 
     private static final class InspectionContext extends ForwardingStepContext {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final String container;

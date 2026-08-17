@@ -1,11 +1,13 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
 import hudson.AbortException;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.List;
 
 record DockerContext(String container, String id, String os, List<String> environment) implements Serializable {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     DockerContext {
@@ -14,6 +16,17 @@ record DockerContext(String container, String id, String os, List<String> enviro
 
     static DockerContext fromInspection(String container, List<String> environment, String output)
             throws AbortException {
+        String[] fields = inspectionFields(container, output);
+        if (!Boolean.parseBoolean(fields[1])) {
+            throw new AbortException("Docker container '" + container + "' is not running");
+        }
+        if (!"linux".equals(fields[2]) && !"windows".equals(fields[2])) {
+            throw new AbortException("Docker container '" + container + "' uses unsupported OS '" + fields[2] + "'");
+        }
+        return new DockerContext(container, fields[0], fields[2], environment);
+    }
+
+    private static String[] inspectionFields(String container, String output) throws AbortException {
         String[] lines = output.strip().split("\\R", 3);
         if (lines.length == 0 || !"0".equals(lines[0])) {
             throw new AbortException("Docker container '" + container + "' does not exist or cannot be inspected");
@@ -25,12 +38,6 @@ record DockerContext(String container, String id, String os, List<String> enviro
         if (fields.length != 3 || fields[0].isEmpty()) {
             throw new AbortException("Docker returned invalid inspection data for '" + container + "'");
         }
-        if (!Boolean.parseBoolean(fields[1])) {
-            throw new AbortException("Docker container '" + container + "' is not running");
-        }
-        if (!"linux".equals(fields[2]) && !"windows".equals(fields[2])) {
-            throw new AbortException("Docker container '" + container + "' uses unsupported OS '" + fields[2] + "'");
-        }
-        return new DockerContext(container, fields[0], fields[2], environment);
+        return fields;
     }
 }

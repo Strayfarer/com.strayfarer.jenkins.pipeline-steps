@@ -40,6 +40,7 @@ command exits nonzero.
 
 ```groovy
 int status = execStatus 'git diff --quiet'
+echo "Git diff status: ${status}"
 ```
 
 `execStatus` streams stdout and stderr and returns the numeric exit status. A
@@ -49,6 +50,7 @@ nonzero status does not by itself fail the Pipeline step.
 
 ```groovy
 String version = execStdout 'git describe --tags --always'
+echo "Version: ${version}"
 ```
 
 `execStdout` streams stdout and stderr while the command runs, then returns a
@@ -60,11 +62,11 @@ exit status fails the Pipeline step.
 The single-string form is shorthand for the `script` option. The map form
 supports these common options:
 
-| Option | Type | Default | Meaning |
-| --- | --- | --- | --- |
-| `script` | `String` | required | Command text passed to the selected shell. |
-| `echoScript` | `boolean` | `false` | Explicitly print the command before execution. |
-| `encoding` | `String` | `UTF-8` | Encoding used for command output. |
+| Option       | Type      | Default  | Meaning                                         |
+|--------------|-----------|----------|-------------------------------------------------|
+| `script`     | `String`  | required | Command text passed to the selected shell.      |
+| `echoScript` | `boolean` | `false`  | Explicitly print the command before execution.  |
+| `encoding`   | `String`  | `UTF-8`  | Encoding used for command output.               |
 
 Command execution must be durable: agent disconnection or controller restart
 must not discard a running process, its output, or its final status. Aborting
@@ -80,6 +82,7 @@ Jenkins interruption semantics.
 insideDockerContainer('build-sidecar') {
     exec 'dotnet test'
     String version = execStdout 'dotnet --version'
+    echo "Using .NET ${version}"
 }
 ```
 
@@ -176,13 +179,13 @@ ordinary failure.
 
 The new names let this plugin coexist with the existing Jenkins Shared Library:
 
-| Shared Library step | Plugin step |
-| --- | --- |
-| `callShell` | `exec` |
-| `callShellStatus` | `execStatus` |
-| `callShellStdout` | `execStdout` |
-| `withUnity` execution scope | `insideDockerContainer` |
-| `executeOnAll` | `everyNode` |
+| Shared Library step         | Plugin step               |
+|-----------------------------|---------------------------|
+| `callShell`                 | `exec`                    |
+| `callShellStatus`           | `execStatus`              |
+| `callShellStdout`           | `execStdout`              |
+| `withUnity` execution scope | `insideDockerContainer`   |
+| `executeOnAll`              | `everyNode`               |
 
 The Unity-specific wrapper can remain in the Shared Library:
 

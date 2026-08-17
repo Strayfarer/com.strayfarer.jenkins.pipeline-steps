@@ -1,5 +1,6 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -8,6 +9,7 @@ import hudson.remoting.VirtualChannel;
 import java.io.File;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Serial;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -35,7 +37,7 @@ final class CapturedOutputDurableTask extends DurableTask {
     }
 
     @Override
-    public void charset(Charset charset) {
+    public void charset(@NonNull Charset charset) {
         delegate.charset(charset);
         if (fixedCaptureCharset == null) {
             captureCharset = charset.name();
@@ -61,6 +63,7 @@ final class CapturedOutputDurableTask extends DurableTask {
 
     private static final class CapturedOutputController extends Controller {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final Controller delegate;
@@ -85,7 +88,8 @@ final class CapturedOutputDurableTask extends DurableTask {
         }
 
         @Override
-        public byte[] getOutput(FilePath workspace, Launcher launcher) throws IOException, InterruptedException {
+        public @NonNull byte[] getOutput(@NonNull FilePath workspace, @NonNull Launcher launcher)
+                throws IOException, InterruptedException {
             FilePath output = workspace.child(captureFile);
             if (!output.exists()) {
                 return new byte[0];
@@ -115,6 +119,7 @@ final class CapturedOutputDurableTask extends DurableTask {
 
     private static final class ReadCapturedOutput extends MasterToSlaveFileCallable<byte[]> {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final String charset;
@@ -126,7 +131,7 @@ final class CapturedOutputDurableTask extends DurableTask {
         @Override
         public byte[] invoke(File file, VirtualChannel channel) throws IOException {
             Charset source = charset == null ? Charset.defaultCharset() : Charset.forName(charset);
-            return new String(Files.readAllBytes(file.toPath()), source).getBytes(StandardCharsets.UTF_8);
+            return Files.readString(file.toPath(), source).getBytes(StandardCharsets.UTF_8);
         }
     }
 }

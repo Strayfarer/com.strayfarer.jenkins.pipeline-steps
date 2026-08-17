@@ -1,14 +1,18 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import static java.util.Objects.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Functions;
 import hudson.model.Action;
+import hudson.model.Computer;
 import hudson.model.Label;
 import hudson.model.Queue;
 import hudson.model.Result;
@@ -17,9 +21,11 @@ import hudson.model.User;
 import hudson.security.ACL;
 import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
+import java.io.Serial;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -45,7 +51,7 @@ class EveryNodeStepTest {
             first.setLabelString("unity linux");
             DumbSlave excluded = j.createOnlineSlave(Label.get("unity"));
             DumbSlave offline = j.createOnlineSlave(Label.get("unity linux"));
-            offline.getComputer().disconnect(null).get(30, TimeUnit.SECONDS);
+            requireNonNull(offline.getComputer()).disconnect(null).get(30, TimeUnit.SECONDS);
 
             WorkflowRun run = build(j, """
                     everyNode('unity && linux') {
@@ -55,7 +61,7 @@ class EveryNodeStepTest {
 
             j.assertBuildStatusSuccess(run);
             String log = JenkinsRule.getLog(run);
-            List<String> expected = List.of(first.getNodeName(), second.getNodeName()).stream()
+            List<String> expected = Stream.of(first.getNodeName(), second.getNodeName())
                     .sorted()
                     .toList();
             assertEquals(1, occurrences(log, "visited=" + expected.get(0)));
@@ -169,15 +175,16 @@ class EveryNodeStepTest {
                         }
                     }
                     """).formatted(first.getNodeName()), true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             j.waitForMessage("exact-visited=" + first.getNodeName(), run);
 
-            selected.getComputer().disconnect(null).get(30, TimeUnit.SECONDS);
+            Computer selectedComputer = requireNonNull(selected.getComputer());
+            selectedComputer.disconnect(null).get(30, TimeUnit.SECONDS);
             Thread.sleep(6_000);
             assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
             j.assertLogNotContains("exact-visited=" + collision.getNodeName(), run);
 
-            selected.getComputer().connect(true).get(30, TimeUnit.SECONDS);
+            selectedComputer.connect(true).get(30, TimeUnit.SECONDS);
             j.assertBuildStatusSuccess(j.waitForCompletion(run));
             j.assertLogContains("exact-visited=" + selected.getNodeName(), run);
         });
@@ -196,7 +203,7 @@ class EveryNodeStepTest {
                         exec "%s"
                     }
                     """.formatted(command), true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             j.waitForMessage("every-node-started", run);
 
             run.doStop();
@@ -220,12 +227,15 @@ class EveryNodeStepTest {
                         exec "%s"
                     }
                     """.formatted(command), true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             j.waitForMessage("before-node-restart", run);
         });
         sessions.then(j -> {
             WorkflowJob job = j.jenkins.getItemByFullName("restart-every-node", WorkflowJob.class);
-            WorkflowRun run = j.waitForCompletion(job.getLastBuild());
+            assertNotNull(job);
+            WorkflowRun lastBuild = job.getLastBuild();
+            assertNotNull(lastBuild);
+            WorkflowRun run = j.waitForCompletion(lastBuild);
 
             j.assertBuildStatusSuccess(run);
             j.assertLogContains("before-node-restart", run);
@@ -238,20 +248,18 @@ class EveryNodeStepTest {
         sessions.then(j -> {
             WorkflowRun run = build(j, "echo 'authentication-source'");
             j.jenkins.setSecurityRealm(j.createDummySecurityRealm());
-            User user = User.getById("every-node-user", true);
+            User user = requireNonNull(User.getById("every-node-user", true));
             NodeQueueTask task;
             try (ACLContext ignored = ACL.as2(user.impersonate2())) {
                 task = new NodeQueueTask(new RunStepContext(run), "selected-node", "selected-node");
             }
 
             assertEquals(run.getParent(), task.getOwnerTask());
-            assertEquals(
-                    user.getId(),
-                    new NodeQueueTask.AuthenticationFromBuild()
-                            .getAuthenticators()
-                            .get(0)
-                            .authenticate2(task)
-                            .getName());
+            var authentication = requireNonNull(new NodeQueueTask.AuthenticationFromBuild()
+                    .getAuthenticators()
+                    .getFirst()
+                    .authenticate2(task));
+            assertEquals(user.getId(), authentication.getName());
         });
     }
 
@@ -280,12 +288,12 @@ class EveryNodeStepTest {
                         echo 'cancelled-body-must-not-run'
                     }
                     """, true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             boolean completed;
             try {
                 Queue.Item item = waitForNodeQueueTask();
                 assertTrue(Queue.getInstance().cancel(item));
-                completed = waitForCompletion(run, 15);
+                completed = waitForCompletion(run);
             } finally {
                 if (run.isBuilding()) {
                     run.doStop();
@@ -305,7 +313,7 @@ class EveryNodeStepTest {
         sessions.then(j -> {
             DumbSlave first = j.createOnlineSlave(Label.get("rollback-nodes"));
             DumbSlave second = j.createOnlineSlave(Label.get("rollback-nodes"));
-            List<DumbSlave> nodes = List.of(first, second).stream()
+            List<DumbSlave> nodes = Stream.of(first, second)
                     .sorted(java.util.Comparator.comparing(DumbSlave::getNodeName))
                     .toList();
             WorkflowRun firstBlocker = startBlocker(j, nodes.get(0), "rollback-blocker-first");
@@ -321,7 +329,7 @@ class EveryNodeStepTest {
                 j.assertBuildStatus(Result.FAILURE, run);
                 j.assertLogContains("Jenkins queue refused node '" + RefuseNode.nodeName + "'", run);
                 assertTrue(
-                        waitForNoNodeQueueTask(run.getParent(), 5),
+                        waitForNoNodeQueueTask(run.getParent()),
                         () -> "Queued tasks remain for " + run.getParent().getFullName() + ": "
                                 + queuedNodeTasks(run.getParent()));
                 j.assertLogNotContains("orphan-body=", run);
@@ -355,7 +363,7 @@ class EveryNodeStepTest {
         WorkflowJob job = j.jenkins.createProject(
                 WorkflowJob.class, "test-" + j.jenkins.getItems().size());
         job.setDefinition(new CpsFlowDefinition(script, true));
-        return job.scheduleBuild2(0).get();
+        return requireNonNull(job.scheduleBuild2(0)).get();
     }
 
     private static WorkflowRun startBlocker(JenkinsRule j, DumbSlave node, String name) throws Exception {
@@ -366,11 +374,12 @@ class EveryNodeStepTest {
                     sleep 60
                 }
                 """).formatted(node.getNodeName(), name), true));
-        WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+        WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
         j.waitForMessage("occupied-" + name, run);
         return run;
     }
 
+    @SuppressWarnings("BusyWait") // Poll the Jenkins queue with a bounded timeout.
     private static Queue.Item waitForNodeQueueTask() throws InterruptedException {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         while (System.nanoTime() < deadline) {
@@ -381,12 +390,12 @@ class EveryNodeStepTest {
             }
             Thread.sleep(100);
         }
-        assertNotNull(null, "NodeQueueTask was not queued within 15 seconds");
-        return null;
+        return fail("NodeQueueTask was not queued within 15 seconds");
     }
 
-    private static boolean waitForCompletion(WorkflowRun run, int seconds) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+    @SuppressWarnings("BusyWait") // Poll Pipeline completion with a bounded timeout.
+    private static boolean waitForCompletion(WorkflowRun run) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
         while (run.isBuilding() && System.nanoTime() < deadline) {
             Thread.sleep(100);
         }
@@ -403,8 +412,9 @@ class EveryNodeStepTest {
         return tasks;
     }
 
-    private static boolean waitForNoNodeQueueTask(WorkflowJob owner, int seconds) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+    @SuppressWarnings("BusyWait") // Poll the Jenkins queue with a bounded timeout.
+    private static boolean waitForNoNodeQueueTask(WorkflowJob owner) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
         while (!queuedNodeTasks(owner).isEmpty() && System.nanoTime() < deadline) {
             Thread.sleep(100);
         }
@@ -413,6 +423,7 @@ class EveryNodeStepTest {
 
     private static final class RunStepContext extends StepContext {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final Run<?, ?> run;
@@ -431,7 +442,7 @@ class EveryNodeStepTest {
         public void onSuccess(Object result) {}
 
         @Override
-        public void onFailure(Throwable failure) {
+        public void onFailure(@NonNull Throwable failure) {
             this.failure = failure;
         }
 

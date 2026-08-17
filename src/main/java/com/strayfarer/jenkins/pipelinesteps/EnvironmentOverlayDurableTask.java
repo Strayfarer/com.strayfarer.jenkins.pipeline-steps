@@ -1,5 +1,6 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
@@ -26,7 +27,7 @@ final class EnvironmentOverlayDurableTask extends DurableTask {
     }
 
     @Override
-    public void charset(Charset charset) {
+    public void charset(@NonNull Charset charset) {
         delegate.charset(charset);
     }
 

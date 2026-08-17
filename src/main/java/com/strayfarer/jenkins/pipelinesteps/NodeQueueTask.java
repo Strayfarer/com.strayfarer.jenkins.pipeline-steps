@@ -26,6 +26,7 @@ import hudson.security.ACLContext;
 import hudson.security.AccessControlled;
 import hudson.slaves.WorkspaceList;
 import java.io.IOException;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,7 @@ import org.springframework.security.core.Authentication;
 
 final class NodeQueueTask implements ContinuedTask, Serializable, AccessControlled {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     private final String id = UUID.randomUUID().toString();
@@ -250,7 +252,7 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
     private final class NodeExecutable implements ContinuableExecutable {
 
         @Override
-        public SubTask getParent() {
+        public @NonNull SubTask getParent() {
             return NodeQueueTask.this;
         }
 
@@ -408,6 +410,7 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
 
     private static final class QueueTaskCancelled extends CauseOfInterruption {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         @Override
@@ -418,6 +421,7 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
 
     private static final class Callback extends BodyExecutionCallback {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final NodeQueueTask task;
@@ -461,7 +465,7 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
         private final Map<NodeQueueTask, RuntimeState> states = new ConcurrentHashMap<>();
 
         static RuntimeRegistry get() {
-            return Jenkins.get().getExtensionList(RuntimeRegistry.class).get(0);
+            return Jenkins.get().getExtensionList(RuntimeRegistry.class).getFirst();
         }
 
         RuntimeState get(NodeQueueTask task) {

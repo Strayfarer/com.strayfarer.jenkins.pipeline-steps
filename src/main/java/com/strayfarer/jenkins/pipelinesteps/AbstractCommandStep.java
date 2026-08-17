@@ -4,6 +4,7 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import java.io.Serial;
 import java.util.Map;
 import java.util.Set;
 import org.jenkinsci.plugins.durabletask.DurableTask;
@@ -94,6 +95,7 @@ abstract class AbstractCommandStep extends Step {
 
     private static final class TrimmedOutputContext extends ForwardingStepContext {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private TrimmedOutputContext(StepContext delegate) {

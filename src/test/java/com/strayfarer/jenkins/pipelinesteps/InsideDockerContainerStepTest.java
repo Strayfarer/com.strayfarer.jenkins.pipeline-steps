@@ -1,6 +1,8 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import static java.util.Objects.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -60,8 +62,8 @@ class InsideDockerContainerStepTest {
             j.assertLogContains("restored-outer", run);
             j.assertLogContains("restored-host", run);
             List<String> lines = Files.readAllLines(log);
-            assertEquals(1, count(lines, "ARGS|inspect", "|outer"));
-            assertEquals(1, count(lines, "ARGS|inspect", "|inner"));
+            assertEquals(1, countInspections(lines, "|outer"));
+            assertEquals(1, countInspections(lines, "|inner"));
             assertEquals(List.of("outer", "inner", "outer"), executions(lines));
         });
     }
@@ -85,10 +87,10 @@ class InsideDockerContainerStepTest {
             j.assertBuildStatusSuccess(run);
             String dockerLog = Files.readString(log);
             assertTrue(dockerLog.contains("ENV|FORWARDED_VALUE|resolved-at-execution"), dockerLog);
-            assertEquals(1, occurrences(dockerLog, "--env|FORWARDED_VALUE"));
+            assertEquals(1, forwardedEnvironmentOccurrences(dockerLog));
             for (String line : Files.readAllLines(log)) {
                 if (line.startsWith("ARGS")) {
-                    assertTrue(!line.contains("resolved-at-execution"), line);
+                    assertFalse(line.contains("resolved-at-execution"), line);
                 }
             }
             j.assertLogNotContains("resolved-at-execution", run);
@@ -128,7 +130,7 @@ class InsideDockerContainerStepTest {
                         }
                     }
                     """.formatted(command), true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             j.waitForMessage("docker-started", run);
 
             run.doStop();
@@ -216,12 +218,12 @@ class InsideDockerContainerStepTest {
         WorkflowJob job = j.jenkins.createProject(
                 WorkflowJob.class, "test-" + j.jenkins.getItems().size());
         job.setDefinition(new CpsFlowDefinition(script, true));
-        return job.scheduleBuild2(0).get();
+        return requireNonNull(job.scheduleBuild2(0)).get();
     }
 
-    private static int count(List<String> lines, String prefix, String suffix) {
+    private static int countInspections(List<String> lines, String suffix) {
         return (int) lines.stream()
-                .filter(line -> line.startsWith(prefix) && line.endsWith(suffix))
+                .filter(line -> line.startsWith("ARGS|inspect") && line.endsWith(suffix))
                 .count();
     }
 
@@ -232,7 +234,8 @@ class InsideDockerContainerStepTest {
                 .toList();
     }
 
-    private static int occurrences(String text, String needle) {
+    private static int forwardedEnvironmentOccurrences(String text) {
+        String needle = "--env|FORWARDED_VALUE";
         int count = 0;
         int offset = 0;
         while ((offset = text.indexOf(needle, offset)) >= 0) {

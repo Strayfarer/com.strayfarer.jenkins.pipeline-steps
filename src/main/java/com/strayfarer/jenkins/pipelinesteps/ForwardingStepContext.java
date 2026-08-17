@@ -1,14 +1,17 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
 import com.google.common.util.concurrent.ListenableFuture;
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.model.Result;
 import java.io.IOException;
+import java.io.Serial;
 import java.util.Objects;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 
 abstract class ForwardingStepContext extends StepContext {
 
+    @Serial
     private static final long serialVersionUID = 1L;
 
     final StepContext delegate;
@@ -29,7 +32,7 @@ abstract class ForwardingStepContext extends StepContext {
     }
 
     @Override
-    public void onFailure(Throwable failure) {
+    public void onFailure(@NonNull Throwable failure) {
         delegate.onFailure(failure);
     }
 

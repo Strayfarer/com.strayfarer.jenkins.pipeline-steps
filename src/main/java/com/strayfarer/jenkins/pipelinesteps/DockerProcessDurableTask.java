@@ -1,11 +1,13 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.Serial;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -53,7 +55,7 @@ final class DockerProcessDurableTask extends DurableTask {
     }
 
     @Override
-    public void charset(Charset charset) {
+    public void charset(@NonNull Charset charset) {
         delegate.charset(charset);
     }
 
@@ -78,6 +80,7 @@ final class DockerProcessDurableTask extends DurableTask {
 
     private static final class DockerProcessController extends Controller {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final Controller delegate;
@@ -106,7 +109,7 @@ final class DockerProcessDurableTask extends DurableTask {
         }
 
         @Override
-        public void watch(FilePath workspace, Handler handler, TaskListener listener)
+        public void watch(@NonNull FilePath workspace, @NonNull Handler handler, @NonNull TaskListener listener)
                 throws IOException, InterruptedException, UnsupportedOperationException {
             delegate.watch(workspace, handler, listener);
         }
@@ -123,7 +126,8 @@ final class DockerProcessDurableTask extends DurableTask {
         }
 
         @Override
-        public byte[] getOutput(FilePath workspace, Launcher launcher) throws IOException, InterruptedException {
+        public @NonNull byte[] getOutput(@NonNull FilePath workspace, @NonNull Launcher launcher)
+                throws IOException, InterruptedException {
             return delegate.getOutput(workspace, launcher);
         }
 

@@ -1,16 +1,19 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.model.Computer;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
+import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import jenkins.model.Jenkins;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -34,10 +37,12 @@ public final class EveryNodeStep extends Step {
         this.label = label;
     }
 
+    @SuppressWarnings("unused") // Jenkins databinding reads this property reflectively.
     public String getLabel() {
         return label;
     }
 
+    @SuppressWarnings("unused") // Jenkins databinding reads this property reflectively.
     public boolean isParallel() {
         return parallel;
     }
@@ -61,7 +66,7 @@ public final class EveryNodeStep extends Step {
         }
 
         @Override
-        public String getDisplayName() {
+        public @NonNull String getDisplayName() {
             return "Execute on every matching node";
         }
 
@@ -84,11 +89,13 @@ public final class EveryNodeStep extends Step {
 
     private record Target(String name, String selfLabel) implements Serializable {
 
+        @Serial
         private static final long serialVersionUID = 1L;
     }
 
     private static final class Execution extends StepExecution {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final String label;
@@ -136,7 +143,7 @@ public final class EveryNodeStep extends Step {
                     synchronized (this) {
                         failure = exception;
                         finished += selected.size() - index - 1;
-                        active = tasks.stream().filter(task -> task != null).toList();
+                        active = tasks.stream().filter(Objects::nonNull).toList();
                     }
                     for (NodeQueueTask task : active) {
                         task.cancel(exception);
@@ -149,7 +156,7 @@ public final class EveryNodeStep extends Step {
         }
 
         @Override
-        public void stop(Throwable cause) {
+        public void stop(@NonNull Throwable cause) {
             List<NodeQueueTask> active;
             synchronized (this) {
                 if (complete) {
@@ -158,7 +165,7 @@ public final class EveryNodeStep extends Step {
                 failure = cause;
                 active = tasks == null
                         ? List.of()
-                        : tasks.stream().filter(task -> task != null).toList();
+                        : tasks.stream().filter(Objects::nonNull).toList();
             }
             for (NodeQueueTask task : active) {
                 task.cancel(cause);
@@ -171,7 +178,7 @@ public final class EveryNodeStep extends Step {
             synchronized (this) {
                 active = complete || tasks == null
                         ? List.of()
-                        : tasks.stream().filter(task -> task != null).toList();
+                        : tasks.stream().filter(Objects::nonNull).toList();
             }
             for (NodeQueueTask task : active) {
                 task.resume();
@@ -272,6 +279,7 @@ public final class EveryNodeStep extends Step {
 
     private static final class NodeContext extends ForwardingStepContext {
 
+        @Serial
         private static final long serialVersionUID = 1L;
 
         private final Execution owner;
@@ -289,7 +297,7 @@ public final class EveryNodeStep extends Step {
         }
 
         @Override
-        public void onFailure(Throwable failure) {
+        public void onFailure(@NonNull Throwable failure) {
             owner.childFailed(index, failure);
         }
     }

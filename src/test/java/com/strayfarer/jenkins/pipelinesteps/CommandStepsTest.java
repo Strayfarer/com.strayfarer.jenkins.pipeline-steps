@@ -1,13 +1,16 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import static java.util.Objects.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import hudson.Functions;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.jenkinsci.plugins.structs.describable.DescribableModel;
+import org.jenkinsci.plugins.structs.describable.DescribableParameter;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
@@ -56,7 +59,7 @@ class CommandStepsTest {
                         exec "echo stderr-returned=${value.contains('stderr-only')}"
                     }
                     """.formatted(command), true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
 
             j.waitForMessage("stdout-early", run);
             assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
@@ -84,12 +87,15 @@ class CommandStepsTest {
                         exec "echo returned-after=${value.contains('capture-after')}"
                     }
                     """.formatted(command), true));
-            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             j.waitForMessage("capture-before", run);
         });
         sessions.then(j -> {
             WorkflowJob job = j.jenkins.getItemByFullName("stdout-restart", WorkflowJob.class);
-            WorkflowRun run = j.waitForCompletion(job.getLastBuild());
+            assertNotNull(job);
+            WorkflowRun lastBuild = job.getLastBuild();
+            assertNotNull(lastBuild);
+            WorkflowRun run = j.waitForCompletion(lastBuild);
 
             j.assertBuildStatusSuccess(run);
             j.assertLogContains("capture-before", run);
@@ -138,14 +144,14 @@ class CommandStepsTest {
 
     private static Set<String> parameters(Class<?> type) {
         return new DescribableModel<>(type)
-                .getParameters().stream().map(parameter -> parameter.getName()).collect(Collectors.toSet());
+                .getParameters().stream().map(DescribableParameter::getName).collect(Collectors.toSet());
     }
 
     private static WorkflowRun build(JenkinsRule j, String script) throws Exception {
         WorkflowJob job = j.jenkins.createProject(
                 WorkflowJob.class, "test-" + j.jenkins.getItems().size());
         job.setDefinition(new CpsFlowDefinition(script, true));
-        return job.scheduleBuild2(0).get();
+        return requireNonNull(job.scheduleBuild2(0)).get();
     }
 
     private static String nativeCommand(String windows, String unix) {
