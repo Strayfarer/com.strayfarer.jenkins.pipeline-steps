@@ -161,6 +161,16 @@ class InsideDockerContainerStepTest {
         assertEquals("linux", context.os());
     }
 
+    @Test
+    void posixCleanupResolvesDockerThroughTheAgentPath() {
+        List<String> command = List.of("docker", "exec", "container with ' quote");
+
+        assertEquals(
+                List.of("/bin/sh", "-c", "exec 'docker' 'exec' 'container with '\"'\"' quote'"),
+                DockerProcessDurableTask.launcherCommand(command, true));
+        assertEquals(command, DockerProcessDurableTask.launcherCommand(command, false));
+    }
+
     private Path installFakeDocker(JenkinsRule j) throws IOException {
         Path tools = temporaryDirectory.resolve("tools");
         Files.createDirectories(tools);

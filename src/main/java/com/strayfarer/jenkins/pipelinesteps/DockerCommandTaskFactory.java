@@ -73,7 +73,7 @@ final class DockerCommandTaskFactory {
         return workspace.endsWith("/") || workspace.endsWith("\\") ? workspace + file : workspace + separator + file;
     }
 
-    private static String joinPosix(List<String> arguments) {
+    static String joinPosix(List<String> arguments) {
         return arguments.stream()
                 .map(DockerCommandTaskFactory::quotePosix)
                 .reduce((a, b) -> a + " " + b)

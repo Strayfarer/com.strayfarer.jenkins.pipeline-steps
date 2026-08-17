@@ -43,6 +43,10 @@ final class DockerProcessDurableTask extends DurableTask {
         this.token = token;
     }
 
+    static List<String> launcherCommand(List<String> command, boolean unix) {
+        return unix ? List.of("/bin/sh", "-c", "exec " + DockerCommandTaskFactory.joinPosix(command)) : command;
+    }
+
     @Override
     public void captureOutput() {
         delegate.captureOutput();
@@ -126,8 +130,9 @@ final class DockerProcessDurableTask extends DurableTask {
         @Override
         public void stop(FilePath workspace, Launcher launcher) throws IOException, InterruptedException {
             try {
+                List<String> command = launcherCommand(stopCommand(), launcher.isUnix());
                 launcher.launch()
-                        .cmds(stopCommand())
+                        .cmds(command)
                         .envs(dockerEnvironment)
                         .pwd(workspace)
                         .quiet(true)
