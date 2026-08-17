@@ -3,6 +3,7 @@ package com.strayfarer.jenkins.pipelinesteps;
 import com.google.common.util.concurrent.ListenableFuture;
 import hudson.model.Result;
 import java.io.IOException;
+import java.util.Objects;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 
@@ -11,9 +12,15 @@ abstract class ForwardingStepContext extends StepContext {
     private static final long serialVersionUID = 1L;
 
     final StepContext delegate;
+    private final Object identity;
 
     ForwardingStepContext(StepContext delegate) {
+        this(delegate, null);
+    }
+
+    ForwardingStepContext(StepContext delegate, Object identity) {
         this.delegate = delegate;
+        this.identity = identity;
     }
 
     @Override
@@ -55,11 +62,12 @@ abstract class ForwardingStepContext extends StepContext {
     public final boolean equals(Object object) {
         return object != null
                 && object.getClass() == getClass()
-                && delegate.equals(((ForwardingStepContext) object).delegate);
+                && delegate.equals(((ForwardingStepContext) object).delegate)
+                && Objects.equals(identity, ((ForwardingStepContext) object).identity);
     }
 
     @Override
     public final int hashCode() {
-        return 31 * getClass().hashCode() + delegate.hashCode();
+        return Objects.hash(getClass(), delegate, identity);
     }
 }
