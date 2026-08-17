@@ -11,6 +11,7 @@ import org.jenkinsci.plugins.structs.describable.DescribableModel;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.JenkinsRule;
@@ -95,6 +96,22 @@ class CommandStepsTest {
             j.assertLogContains("capture-after", run);
             j.assertLogContains("returned-before=true", run);
             j.assertLogContains("returned-after=true", run);
+        });
+    }
+
+    @Test
+    void execStdoutTranscodesCapturedOutputFromTheConfiguredEncoding() throws Throwable {
+        Assumptions.assumeFalse(Functions.isWindows());
+        sessions.then(j -> {
+            WorkflowRun run = build(j, """
+                    node {
+                        def value = execStdout script: "printf '\\334ber\\n'", encoding: 'ISO-8859-1'
+                        echo "encoded=[${value}]"
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("encoded=[Über]", run);
         });
     }
 

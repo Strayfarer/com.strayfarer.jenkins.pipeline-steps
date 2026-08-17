@@ -107,23 +107,43 @@ public final class EveryNodeStep extends Step {
         }
 
         @Override
-        public synchronized boolean start() throws Exception {
+        public boolean start() throws Exception {
             List<Target> selected = snapshot(label);
             if (selected.isEmpty()) {
                 throw new AbortException("No online Jenkins nodes match label '" + label + "'");
             }
-            targets = selected;
-            tasks = new ArrayList<>();
-            for (int index = 0; index < targets.size(); index++) {
-                tasks.add(null);
+            int initialSequential = -1;
+            synchronized (this) {
+                targets = selected;
+                tasks = new ArrayList<>();
+                for (int index = 0; index < selected.size(); index++) {
+                    tasks.add(null);
+                }
+                if (parallel) {
+                    next = selected.size();
+                } else {
+                    initialSequential = next++;
+                }
             }
             if (parallel) {
-                for (int index = 0; index < targets.size(); index++) {
-                    launch(index);
+                int index = 0;
+                try {
+                    for (; index < selected.size(); index++) {
+                        launch(index);
+                    }
+                } catch (Exception exception) {
+                    List<NodeQueueTask> active;
+                    synchronized (this) {
+                        failure = exception;
+                        finished += selected.size() - index - 1;
+                        active = tasks.stream().filter(task -> task != null).toList();
+                    }
+                    for (NodeQueueTask task : active) {
+                        task.cancel(exception);
+                    }
                 }
-                next = targets.size();
             } else {
-                launch(next++);
+                launch(initialSequential);
             }
             return false;
         }
@@ -168,7 +188,7 @@ public final class EveryNodeStep extends Step {
             NodeContext context = new NodeContext(getContext(), this, index);
             NodeQueueTask task = new NodeQueueTask(context, target.name(), target.selfLabel());
             tasks.set(index, task);
-            Queue.WaitingItem item = Queue.getInstance().schedule2(task, 0).getCreateItem();
+            Queue.WaitingItem item = task.schedule();
             if (item == null) {
                 throw new AbortException("Jenkins queue refused node '" + target.name() + "'");
             }
@@ -184,9 +204,9 @@ public final class EveryNodeStep extends Step {
                 }
                 tasks.set(index, null);
                 finished++;
-                if (!parallel && next < targets.size()) {
+                if (!parallel && failure == null && next < targets.size()) {
                     following = next++;
-                } else if (finished == targets.size()) {
+                } else if (finished == targets.size() || (!parallel && failure != null)) {
                     complete = true;
                     reportSuccess = failure == null;
                     reportedFailure = failure;

@@ -4,6 +4,7 @@ import hudson.EnvVars;
 import hudson.Launcher;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.function.Predicate;
 import org.jenkinsci.plugins.durabletask.BourneShellScript;
@@ -40,7 +41,9 @@ final class CommandTaskFactory {
             powershellScript.setPowershellBinary(windowsShell);
             task = powershellScript;
         }
-        return teeStdout ? new CapturedOutputDurableTask(task, captureFile) : task;
+        return teeStdout
+                ? new CapturedOutputDurableTask(task, captureFile, unix ? null : StandardCharsets.UTF_8)
+                : task;
     }
 
     static String selectWindowsShell(Predicate<String> available) {

@@ -4,10 +4,14 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import hudson.remoting.VirtualChannel;
+import java.io.File;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import jenkins.MasterToSlaveFileCallable;
 import org.jenkinsci.plugins.durabletask.Controller;
 import org.jenkinsci.plugins.durabletask.DurableTask;
 
@@ -16,10 +20,13 @@ final class CapturedOutputDurableTask extends DurableTask {
 
     private final DurableTask delegate;
     private final String captureFile;
+    private final String fixedCaptureCharset;
+    private String captureCharset = StandardCharsets.UTF_8.name();
 
-    CapturedOutputDurableTask(DurableTask delegate, String captureFile) {
+    CapturedOutputDurableTask(DurableTask delegate, String captureFile, Charset fixedCaptureCharset) {
         this.delegate = delegate;
         this.captureFile = captureFile;
+        this.fixedCaptureCharset = fixedCaptureCharset == null ? null : fixedCaptureCharset.name();
     }
 
     @Override
@@ -30,18 +37,26 @@ final class CapturedOutputDurableTask extends DurableTask {
     @Override
     public void charset(Charset charset) {
         delegate.charset(charset);
+        if (fixedCaptureCharset == null) {
+            captureCharset = charset.name();
+        }
     }
 
     @Override
     public void defaultCharset() {
         delegate.defaultCharset();
+        if (fixedCaptureCharset == null) {
+            captureCharset = null;
+        }
     }
 
     @Override
     public Controller launch(EnvVars environment, FilePath workspace, Launcher launcher, TaskListener listener)
             throws IOException, InterruptedException {
         workspace.child(captureFile).delete();
-        return new CapturedOutputController(delegate.launch(environment, workspace, launcher, listener), captureFile);
+        String outputCharset = fixedCaptureCharset == null ? captureCharset : fixedCaptureCharset;
+        return new CapturedOutputController(
+                delegate.launch(environment, workspace, launcher, listener), captureFile, outputCharset);
     }
 
     private static final class CapturedOutputController extends Controller {
@@ -50,10 +65,12 @@ final class CapturedOutputDurableTask extends DurableTask {
 
         private final Controller delegate;
         private final String captureFile;
+        private final String captureCharset;
 
-        private CapturedOutputController(Controller delegate, String captureFile) {
+        private CapturedOutputController(Controller delegate, String captureFile, String captureCharset) {
             this.delegate = delegate;
             this.captureFile = captureFile;
+            this.captureCharset = captureCharset;
         }
 
         @Override
@@ -73,9 +90,7 @@ final class CapturedOutputDurableTask extends DurableTask {
             if (!output.exists()) {
                 return new byte[0];
             }
-            try (InputStream stream = output.read()) {
-                return stream.readAllBytes();
-            }
+            return output.act(new ReadCapturedOutput(captureCharset));
         }
 
         @Override
@@ -95,6 +110,23 @@ final class CapturedOutputDurableTask extends DurableTask {
         @Override
         public String getDiagnostics(FilePath workspace, Launcher launcher) throws IOException, InterruptedException {
             return delegate.getDiagnostics(workspace, launcher);
+        }
+    }
+
+    private static final class ReadCapturedOutput extends MasterToSlaveFileCallable<byte[]> {
+
+        private static final long serialVersionUID = 1L;
+
+        private final String charset;
+
+        private ReadCapturedOutput(String charset) {
+            this.charset = charset;
+        }
+
+        @Override
+        public byte[] invoke(File file, VirtualChannel channel) throws IOException {
+            Charset source = charset == null ? Charset.defaultCharset() : Charset.forName(charset);
+            return new String(Files.readAllBytes(file.toPath()), source).getBytes(StandardCharsets.UTF_8);
         }
     }
 }

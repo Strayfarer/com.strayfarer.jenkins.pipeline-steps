@@ -1,20 +1,34 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import com.google.common.util.concurrent.Futures;
+import com.google.common.util.concurrent.ListenableFuture;
 import hudson.Functions;
+import hudson.model.Action;
 import hudson.model.Label;
+import hudson.model.Queue;
 import hudson.model.Result;
+import hudson.model.Run;
+import hudson.model.User;
+import hudson.security.ACL;
+import hudson.security.ACLContext;
 import hudson.slaves.DumbSlave;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
+import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
+import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import org.jvnet.hudson.test.JenkinsRule;
+import org.jvnet.hudson.test.TestExtension;
 import org.jvnet.hudson.test.junit.jupiter.JenkinsSessionExtension;
 
 class EveryNodeStepTest {
@@ -219,11 +233,240 @@ class EveryNodeStepTest {
         });
     }
 
+    @Test
+    void queueTaskPreservesBuildAuthenticationAndOwner() throws Throwable {
+        sessions.then(j -> {
+            WorkflowRun run = build(j, "echo 'authentication-source'");
+            j.jenkins.setSecurityRealm(j.createDummySecurityRealm());
+            User user = User.getById("every-node-user", true);
+            NodeQueueTask task;
+            try (ACLContext ignored = ACL.as2(user.impersonate2())) {
+                task = new NodeQueueTask(new RunStepContext(run), "selected-node", "selected-node");
+            }
+
+            assertEquals(run.getParent(), task.getOwnerTask());
+            assertEquals(
+                    user.getId(),
+                    new NodeQueueTask.AuthenticationFromBuild()
+                            .getAuthenticators()
+                            .get(0)
+                            .authenticate2(task)
+                            .getName());
+        });
+    }
+
+    @Test
+    void cancellationBeforeRuntimeRegistrationCompletesTheTask() throws Throwable {
+        sessions.then(j -> {
+            WorkflowRun run = build(j, "echo 'cancellation-source'");
+            RunStepContext context = new RunStepContext(run);
+            NodeQueueTask task = new NodeQueueTask(context, "selected-node", "selected-node");
+            InterruptedException cancellation = new InterruptedException("cancelled during handoff");
+
+            task.cancel(cancellation);
+
+            assertSame(cancellation, context.failure);
+        });
+    }
+
+    @Test
+    void externallyCancelledQueueItemCompletesTheStep() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave node = j.createOnlineSlave(Label.get("cancel-queued-node"));
+            WorkflowRun blocker = startBlocker(j, node, "cancel-blocker");
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "cancel-queued-every-node");
+            job.setDefinition(new CpsFlowDefinition("""
+                    everyNode('cancel-queued-node') {
+                        echo 'cancelled-body-must-not-run'
+                    }
+                    """, true));
+            WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+            boolean completed;
+            try {
+                Queue.Item item = waitForNodeQueueTask();
+                assertTrue(Queue.getInstance().cancel(item));
+                completed = waitForCompletion(run, 15);
+            } finally {
+                if (run.isBuilding()) {
+                    run.doStop();
+                }
+                blocker.doStop();
+                j.waitForCompletion(blocker);
+            }
+
+            assertTrue(completed, JenkinsRule.getLog(run));
+            j.assertBuildStatus(Result.ABORTED, run);
+            j.assertLogNotContains("cancelled-body-must-not-run", run);
+        });
+    }
+
+    @Test
+    void parallelQueueRefusalCancelsPreviouslyScheduledBranches() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave first = j.createOnlineSlave(Label.get("rollback-nodes"));
+            DumbSlave second = j.createOnlineSlave(Label.get("rollback-nodes"));
+            List<DumbSlave> nodes = List.of(first, second).stream()
+                    .sorted(java.util.Comparator.comparing(DumbSlave::getNodeName))
+                    .toList();
+            WorkflowRun firstBlocker = startBlocker(j, nodes.get(0), "rollback-blocker-first");
+            WorkflowRun secondBlocker = startBlocker(j, nodes.get(1), "rollback-blocker-second");
+            RefuseNode.nodeName = nodes.get(1).getNodeName();
+            try {
+                WorkflowRun run = build(j, """
+                        everyNode(label: 'rollback-nodes', parallel: true) {
+                            echo "orphan-body=${env.NODE_NAME}"
+                        }
+                        """);
+
+                j.assertBuildStatus(Result.FAILURE, run);
+                j.assertLogContains("Jenkins queue refused node '" + RefuseNode.nodeName + "'", run);
+                assertTrue(
+                        waitForNoNodeQueueTask(run.getParent(), 5),
+                        () -> "Queued tasks remain for " + run.getParent().getFullName() + ": "
+                                + queuedNodeTasks(run.getParent()));
+                j.assertLogNotContains("orphan-body=", run);
+            } finally {
+                for (Queue.Item item : Queue.getInstance().getItems()) {
+                    if (item.task instanceof NodeQueueTask) {
+                        Queue.getInstance().cancel(item);
+                    }
+                }
+                firstBlocker.doStop();
+                secondBlocker.doStop();
+                j.waitForCompletion(firstBlocker);
+                j.waitForCompletion(secondBlocker);
+                RefuseNode.nodeName = null;
+            }
+        });
+    }
+
+    @TestExtension("parallelQueueRefusalCancelsPreviouslyScheduledBranches")
+    public static final class RefuseNode extends Queue.QueueDecisionHandler {
+
+        private static volatile String nodeName;
+
+        @Override
+        public boolean shouldSchedule(Queue.Task task, List<Action> actions) {
+            return !(task instanceof NodeQueueTask && task.getName().equals(nodeName));
+        }
+    }
+
     private static WorkflowRun build(JenkinsRule j, String script) throws Exception {
         WorkflowJob job = j.jenkins.createProject(
                 WorkflowJob.class, "test-" + j.jenkins.getItems().size());
         job.setDefinition(new CpsFlowDefinition(script, true));
         return job.scheduleBuild2(0).get();
+    }
+
+    private static WorkflowRun startBlocker(JenkinsRule j, DumbSlave node, String name) throws Exception {
+        WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, name);
+        job.setDefinition(new CpsFlowDefinition(("""
+                node('%s') {
+                    echo 'occupied-%s'
+                    sleep 60
+                }
+                """).formatted(node.getNodeName(), name), true));
+        WorkflowRun run = job.scheduleBuild2(0).waitForStart();
+        j.waitForMessage("occupied-" + name, run);
+        return run;
+    }
+
+    private static Queue.Item waitForNodeQueueTask() throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            for (Queue.Item item : Queue.getInstance().getItems()) {
+                if (item.task instanceof NodeQueueTask) {
+                    return item;
+                }
+            }
+            Thread.sleep(100);
+        }
+        assertNotNull(null, "NodeQueueTask was not queued within 15 seconds");
+        return null;
+    }
+
+    private static boolean waitForCompletion(WorkflowRun run, int seconds) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (run.isBuilding() && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+        }
+        return !run.isBuilding();
+    }
+
+    private static List<String> queuedNodeTasks(WorkflowJob owner) {
+        List<String> tasks = new ArrayList<>();
+        for (Queue.Item item : Queue.getInstance().getItems()) {
+            if (item.task instanceof NodeQueueTask && item.task.getOwnerTask().equals(owner)) {
+                tasks.add(item.task.getName() + " (queue id " + item.getId() + ")");
+            }
+        }
+        return tasks;
+    }
+
+    private static boolean waitForNoNodeQueueTask(WorkflowJob owner, int seconds) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(seconds);
+        while (!queuedNodeTasks(owner).isEmpty() && System.nanoTime() < deadline) {
+            Thread.sleep(100);
+        }
+        return queuedNodeTasks(owner).isEmpty();
+    }
+
+    private static final class RunStepContext extends StepContext {
+
+        private static final long serialVersionUID = 1L;
+
+        private final Run<?, ?> run;
+        private Throwable failure;
+
+        private RunStepContext(Run<?, ?> run) {
+            this.run = run;
+        }
+
+        @Override
+        public <T> T get(Class<T> key) {
+            return key == Run.class ? key.cast(run) : null;
+        }
+
+        @Override
+        public void onSuccess(Object result) {}
+
+        @Override
+        public void onFailure(Throwable failure) {
+            this.failure = failure;
+        }
+
+        @Override
+        public boolean isReady() {
+            return true;
+        }
+
+        @Override
+        public ListenableFuture<Void> saveState() {
+            return Futures.immediateVoidFuture();
+        }
+
+        @Override
+        public void setResult(Result result) {}
+
+        @Override
+        public BodyInvoker newBodyInvoker() {
+            throw new UnsupportedOperationException();
+        }
+
+        @Override
+        public boolean hasBody() {
+            return false;
+        }
+
+        @Override
+        public boolean equals(Object object) {
+            return object == this;
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
     }
 
     private static int occurrences(String text, String needle) {
