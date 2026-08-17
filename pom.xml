@@ -11,7 +11,7 @@
 
   <groupId>com.strayfarer.jenkins</groupId>
   <artifactId>pipeline-steps</artifactId>
-  <version>${revision}${changelist}</version>
+  <version>${revision}</version>
   <packaging>hpi</packaging>
 
   <name>Strayfarer Pipeline Steps</name>
@@ -41,8 +41,7 @@
   </scm>
 
   <properties>
-    <revision>0.1</revision>
-    <changelist>-SNAPSHOT</changelist>
+    <revision>SNAPSHOT</revision>
     <scmTag>HEAD</scmTag>
     <jenkins.version>2.555.3</jenkins.version>
     <palantir.java.format.version>2.96.0</palantir.java.format.version>
