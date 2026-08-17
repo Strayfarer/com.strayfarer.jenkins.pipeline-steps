@@ -1,6 +1,9 @@
 #!/bin/sh
 
 log=$FAKE_DOCKER_LOG
+if [ -z "$log" ]; then
+    log=$(dirname "$0")/../docker.log
+fi
 printf 'ARGS' >> "$log"
 for argument in "$@"; do
     printf '|%s' "$argument" >> "$log"
