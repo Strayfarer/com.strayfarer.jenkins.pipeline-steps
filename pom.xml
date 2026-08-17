@@ -16,7 +16,7 @@
 
   <name>Strayfarer Pipeline Steps</name>
   <description>Generic Jenkins Pipeline steps for durable command execution, Docker sidecars, and execution across matching nodes.</description>
-  <url>https://github.com/Strayfarer/com.strayfarer.pipeline-steps</url>
+  <url>https://github.com/Strayfarer/com.strayfarer.jenkins.pipeline-steps</url>
 
   <licenses>
     <license>
@@ -34,10 +34,10 @@
   </developers>
 
   <scm>
-    <connection>scm:git:https://github.com/Strayfarer/com.strayfarer.pipeline-steps.git</connection>
-    <developerConnection>scm:git:git@github.com:Strayfarer/com.strayfarer.pipeline-steps.git</developerConnection>
+    <connection>scm:git:https://github.com/Strayfarer/com.strayfarer.jenkins.pipeline-steps.git</connection>
+    <developerConnection>scm:git:git@github.com:Strayfarer/com.strayfarer.jenkins.pipeline-steps.git</developerConnection>
     <tag>${scmTag}</tag>
-    <url>https://github.com/Strayfarer/com.strayfarer.pipeline-steps</url>
+    <url>https://github.com/Strayfarer/com.strayfarer.jenkins.pipeline-steps</url>
   </scm>
 
   <properties>

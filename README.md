@@ -4,10 +4,6 @@ Generic, restart-safe Jenkins Pipeline steps for running commands on agents or
 inside existing Docker sidecars, and for running a Pipeline body on every node
 matching a label expression.
 
-> [!IMPORTANT]
-> This repository currently contains the plugin scaffold and API contract. The
-> steps described below are not implemented yet.
-
 ## Scope
 
 The plugin provides four Pipeline steps:
@@ -25,8 +21,8 @@ particular, Unity project and package Pipelines remain in their Shared Library.
 ## Command execution
 
 All command steps require a Jenkins node and workspace. Linux commands run
-through `/bin/sh`; Windows commands run through PowerShell (`pwsh` if available, `powershell` otherwise). UTF-8 is
-the default encoding.
+through `/bin/sh`; Windows commands run through PowerShell (`pwsh` if available,
+`powershell` otherwise). UTF-8 is the default encoding.
 
 ### `exec`
 
@@ -206,9 +202,8 @@ Unity initialization can distinguish a replaced sidecar through
 
 ## Development
 
-The scaffold uses Maven 3.9.6 or newer, Java 21, and the Jenkins plugin parent
-POM. The provisional minimum Jenkins version is 2.555.3 and should be checked
-against the target controllers before the first release.
+The project uses Maven 3.9.6 or newer, Java 21, and the Jenkins plugin parent
+POM. The minimum Jenkins version is 2.555.3.
 
 ```shell
 ./mvnw verify
@@ -217,10 +212,11 @@ against the target controllers before the first release.
 
 On Windows, use `mvnw.cmd` instead of `./mvnw`.
 
-Planned verification includes Jenkins test-harness Pipeline tests, restart and
-abort tests, concurrent and nested container scopes, Linux and Windows agents,
-Linux and Windows sidecars, sequential and parallel node execution, and
-credential masking.
+Verification includes Jenkins test-harness Pipeline tests for restart and abort
+behavior, nested container scopes, environment-value isolation, Linux and
+Windows command paths, Linux and Windows sidecars, and sequential and parallel
+node execution. GitHub Actions runs the full Maven verification on Linux; the
+same suite can be run locally on Windows.
 
 ## License
 
