@@ -111,7 +111,7 @@ class CommandStepsTest {
         sessions.then(j -> {
             WorkflowRun run = build(j, """
                     node {
-                        def value = execStdout script: "printf '\\334ber\\n'", encoding: 'ISO-8859-1'
+                        def value = execStdout script: "printf '\\\\334ber\\\\n'", encoding: 'ISO-8859-1'
                         echo "encoded=[${value}]"
                     }
                     """);
