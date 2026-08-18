@@ -1,4 +1,3 @@
-
 def assertValue(actual, expected, description) {
     if (actual != expected) {
         error "${description}: expected '${expected}', got '${actual}'"
@@ -51,8 +50,14 @@ stage('Queued everyNode') {
     }
 }
 
-stage('Parallel everyNode') {
+stage('Parallel everyNode named arguments') {
     everyNode(label: 'server', parallel: true) {
+        echo "parallel-node-visited=${env.NODE_NAME}"
+    }
+}
+
+stage('Parallel everyNode positional arguments') {
+    everyNode('server', true) {
         echo "parallel-node-visited=${env.NODE_NAME}"
     }
 }
