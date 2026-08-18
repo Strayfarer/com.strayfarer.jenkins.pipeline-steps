@@ -162,7 +162,8 @@ Execution is sequential by default. Each iteration queues the remaining
 snapshotted node names together, so Jenkins selects whichever remaining node is
 available first. If `everyNode` is called from a matching node context, that
 node runs first in the existing executor and workspace instead of allocating a
-second executor. Parallel execution is explicit:
+second executor. Each body invocation is emitted as a Jenkins stage named after
+its concrete node, matching `executeOnAll`. Parallel execution is explicit:
 
 ```groovy
 everyNode(label: 'unity', parallel: true) {

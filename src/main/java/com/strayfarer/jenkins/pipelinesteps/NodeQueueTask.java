@@ -472,18 +472,27 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
         private static final long serialVersionUID = 1L;
 
         private final NodeQueueTask task;
+        private Throwable stageFailure;
 
         private Callback(NodeQueueTask task) {
             this.task = task;
         }
 
         @Override
+        public void onStart(StepContext context) {
+            stageFailure = EveryNodeStageAction.attach(context, task.selectedNodeName);
+        }
+
+        @Override
         public void onSuccess(StepContext bodyContext, Object result) {
-            task.finish(null);
+            task.finish(stageFailure);
         }
 
         @Override
         public void onFailure(StepContext bodyContext, Throwable failure) {
+            if (stageFailure != null) {
+                failure.addSuppressed(stageFailure);
+            }
             task.finish(failure);
         }
     }

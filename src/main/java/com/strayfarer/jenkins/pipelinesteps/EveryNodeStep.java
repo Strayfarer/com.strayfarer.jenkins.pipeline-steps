@@ -377,6 +377,7 @@ public final class EveryNodeStep extends Step {
         private final Execution owner;
         private final int index;
         private final String nodeName;
+        private Throwable stageFailure;
 
         private InPlaceCallback(Execution owner, int index, String nodeName) {
             this.owner = owner;
@@ -385,12 +386,24 @@ public final class EveryNodeStep extends Step {
         }
 
         @Override
+        public void onStart(StepContext context) {
+            stageFailure = EveryNodeStageAction.attach(context, nodeName);
+        }
+
+        @Override
         public void onSuccess(StepContext context, Object result) {
-            owner.childSucceeded(index, nodeName);
+            if (stageFailure == null) {
+                owner.childSucceeded(index, nodeName);
+            } else {
+                owner.childFailed(index, stageFailure);
+            }
         }
 
         @Override
         public void onFailure(StepContext context, Throwable failure) {
+            if (stageFailure != null) {
+                failure.addSuppressed(stageFailure);
+            }
             owner.childFailed(index, failure);
         }
     }

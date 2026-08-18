@@ -26,7 +26,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
+import org.jenkinsci.plugins.workflow.actions.StageAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
+import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
 import org.jenkinsci.plugins.workflow.job.WorkflowRun;
 import org.jenkinsci.plugins.workflow.steps.BodyInvoker;
@@ -83,6 +86,7 @@ class EveryNodeStepTest {
                     log.indexOf("visited=" + selected.get(1).getNodeName())
                             < log.indexOf("visited=" + selected.get(0).getNodeName()),
                     log);
+            assertEquals(selected.stream().map(DumbSlave::getNodeName).sorted().toList(), stageNames(run));
         });
     }
 
@@ -136,6 +140,11 @@ class EveryNodeStepTest {
             assertEquals(1, occurrences(log, currentVisit));
             assertEquals(1, occurrences(log, otherVisit));
             assertTrue(log.indexOf(currentVisit) < log.indexOf(otherVisit), log);
+            assertEquals(
+                    Stream.of(current.getNodeName(), other.getNodeName())
+                            .sorted()
+                            .toList(),
+                    stageNames(run));
         });
     }
 
@@ -157,6 +166,11 @@ class EveryNodeStepTest {
             assertEquals(1, occurrences(log, "parallel-visited=" + second.getNodeName()));
             assertTrue(log.contains("(" + first.getNodeName() + ")"), log);
             assertTrue(log.contains("(" + second.getNodeName() + ")"), log);
+            assertEquals(
+                    Stream.of(first.getNodeName(), second.getNodeName())
+                            .sorted()
+                            .toList(),
+                    stageNames(run));
         });
     }
 
@@ -561,5 +575,17 @@ class EveryNodeStepTest {
             offset += needle.length();
         }
         return count;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static List<String> stageNames(WorkflowRun run) throws java.io.IOException {
+        List<String> names = new ArrayList<>();
+        for (FlowNode node : new FlowGraphWalker(requireNonNull(run.getExecution()))) {
+            StageAction action = node.getAction(StageAction.class);
+            if (action != null) {
+                names.add(action.getStageName());
+            }
+        }
+        return names.stream().sorted().toList();
     }
 }
