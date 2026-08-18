@@ -5,7 +5,7 @@ def assertValue(actual, expected, description) {
     }
 }
 
-node('Mörkö') {
+node('server') {
     stage('Host command steps') {
         exec 'echo host-exec-ok'
         assertValue(execStatus('exit 7'), 7, 'execStatus on host')
@@ -38,7 +38,7 @@ node('Mörkö') {
 
     stage('Current-node everyNode') {
         def currentNode = env.NODE_NAME
-        everyNode('Mörkö') {
+        everyNode(env.NODE_NAME) {
             assertValue(env.NODE_NAME, currentNode, 'current-node everyNode')
             echo "current-node-visited=${env.NODE_NAME}"
         }
@@ -46,13 +46,13 @@ node('Mörkö') {
 }
 
 stage('Queued everyNode') {
-    everyNode('Mörkö') {
+    everyNode('server') {
         echo "queued-node-visited=${env.NODE_NAME}"
     }
 }
 
 stage('Parallel everyNode') {
-    everyNode(label: 'Mörkö', parallel: true) {
+    everyNode(label: 'server', parallel: true) {
         echo "parallel-node-visited=${env.NODE_NAME}"
     }
 }
