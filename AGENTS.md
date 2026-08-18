@@ -71,7 +71,7 @@ needed.
   Jenkinsfile must exercise all of the plugin's Pipeline scripts and should
   retain assertions for previously discovered regressions.
 - The Jenkins controller runs that file through a job under
-  `https://ci.slothsoft.net/job/jenkins-plugins/` whose name matches the Jenkins
+  `https://ci.slothsoft.net/job/jenkins/` whose name matches the Jenkins
   plugin ID. Watch the full job console log for errors whenever running integration tests; a scheduled
   build alone does not establish success.
 - The durable test servers are `Mörkö`, a Linux server that also hosts the
@@ -92,14 +92,23 @@ A complete release cycle is:
 
 1. Implement the features and update `.jenkins/Jenkinsfile.groovy` as needed.
 2. Run the local test suite.
-3. Commit and push the changes.
-4. Watch the GitHub Actions checks and require them all to pass.
-5. Tag the new version and publish its release artifacts.
-6. Install that exact version into `groke` container `jenkins`.
-7. Restart Jenkins after confirming it is idle.
-8. Run this plugin's job in `jenkins-plugins` and watch its complete console log.
-9. If any check or integration test fails, fix the issue and repeat the full
-   cycle from step 1 with a new version.
+3. Commit, then build an unpublished candidate HPI with version `<next-version>-rc.<commit-hash>`.
+4. Install the candidate HPI into `groke` container `jenkins`.
+5. Restart Jenkins after confirming it has no running or queued jobs, verify
+   the candidate version in the installed JPI manifest, and check startup logs
+   for plugin-load failures.
+6. Run this plugin's job in `https://ci.slothsoft.net/job/jenkins/` and watch its complete console log.
+7. If the candidate integration test fails, fix the issue, then repeat from step 2.
+8. After the candidate passes, push the changes, then watch the GitHub CI checks.
+9. If the GitHub CI checks fail, fix the issue, then repeat from step 2.
+10. After GitHub CI passes, tag the final version and publish its release artifacts.
+11. Download and install the final HPI into `groke` container `jenkins`.
+12. Restart Jenkins after confirming it has no running or queued jobs, verify
+   the final version in the installed JPI manifest, and check startup logs
+   for plugin-load failures.
+13. Run this plugin's job in `https://ci.slothsoft.net/job/jenkins/` and watch its complete console log.
+14. If any post-push check or final integration test fails, fix the issue and
+    repeat the full cycle from step 1 with a new patch version.
 
 ## General
 
