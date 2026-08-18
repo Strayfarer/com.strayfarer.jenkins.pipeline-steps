@@ -1,5 +1,9 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
+import com.cloudbees.groovy.cps.Block;
+import com.cloudbees.groovy.cps.Builder;
+import com.cloudbees.groovy.cps.MethodLocation;
+import com.cloudbees.groovy.cps.sandbox.Trusted;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import groovy.lang.Closure;
 import groovy.lang.GroovyObject;
@@ -7,8 +11,10 @@ import hudson.Extension;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import org.jenkinsci.plugins.scriptsecurity.sandbox.whitelists.Whitelisted;
+import org.jenkinsci.plugins.workflow.cps.CpsClosure2;
 import org.jenkinsci.plugins.workflow.cps.CpsScript;
 import org.jenkinsci.plugins.workflow.cps.GlobalVariable;
 
@@ -62,7 +68,15 @@ public final class EveryNodeGlobalVariable extends GlobalVariable {
 
         private Object invoke(Map<?, ?> arguments, Closure<?> body) {
             GroovyObject steps = (GroovyObject) script.getBinding().getVariable("steps");
-            return steps.invokeMethod("everyNode", new Object[] {arguments, body});
+            return steps.invokeMethod("everyNode", new Object[] {arguments, stagedBody(steps, body)});
+        }
+
+        private Closure<?> stagedBody(GroovyObject steps, Closure<?> body) {
+            Builder builder = new Builder(new MethodLocation(EveryNodeGlobalVariable.class, "stageBody"))
+                    .contextualize(Trusted.INSTANCE);
+            Block nodeName = builder.property(1, builder.property(1, builder.constant(script), "env"), "NODE_NAME");
+            Block stage = builder.functionCall(1, builder.constant(steps), "stage", nodeName, builder.constant(body));
+            return new CpsClosure2(script, script, List.of(), stage, null);
         }
     }
 }

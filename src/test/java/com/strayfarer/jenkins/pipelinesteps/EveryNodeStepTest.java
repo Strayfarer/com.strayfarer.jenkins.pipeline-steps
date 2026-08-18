@@ -26,8 +26,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
-import org.jenkinsci.plugins.workflow.actions.StageAction;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
+import org.jenkinsci.plugins.workflow.cps.nodes.StepStartNode;
 import org.jenkinsci.plugins.workflow.graph.FlowGraphWalker;
 import org.jenkinsci.plugins.workflow.graph.FlowNode;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -63,6 +63,7 @@ class EveryNodeStepTest {
             job.setDefinition(new CpsFlowDefinition("""
                     everyNode('unity && linux') {
                         echo "visited=${env.NODE_NAME}"
+                        echo "stage=${env.STAGE_NAME}"
                     }
                     """, true));
             WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
@@ -82,6 +83,8 @@ class EveryNodeStepTest {
             assertEquals(1, occurrences(log, "visited=" + selected.get(1).getNodeName()));
             assertEquals(0, occurrences(log, "visited=" + excluded.getNodeName()));
             assertEquals(0, occurrences(log, "visited=" + offline.getNodeName()));
+            assertEquals(1, occurrences(log, "stage=" + selected.get(0).getNodeName()));
+            assertEquals(1, occurrences(log, "stage=" + selected.get(1).getNodeName()));
             assertTrue(
                     log.indexOf("visited=" + selected.get(1).getNodeName())
                             < log.indexOf("visited=" + selected.get(0).getNodeName()),
@@ -596,13 +599,13 @@ class EveryNodeStepTest {
         return count;
     }
 
-    @SuppressWarnings("deprecation")
     private static List<String> stageNames(WorkflowRun run) throws java.io.IOException {
         List<String> names = new ArrayList<>();
         for (FlowNode node : new FlowGraphWalker(requireNonNull(run.getExecution()))) {
-            StageAction action = node.getAction(StageAction.class);
-            if (action != null) {
-                names.add(action.getStageName());
+            if (node instanceof StepStartNode start
+                    && start.isBody()
+                    && start.getDescriptor().getFunctionName().equals("stage")) {
+                names.add(start.getDisplayName());
             }
         }
         return names.stream().sorted().toList();

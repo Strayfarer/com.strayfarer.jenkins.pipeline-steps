@@ -39,6 +39,7 @@ node('server') {
         def currentNode = env.NODE_NAME
         everyNode(env.NODE_NAME) {
             assertValue(env.NODE_NAME, currentNode, 'current-node everyNode')
+            assertValue(env.STAGE_NAME, env.NODE_NAME, 'current-node everyNode stage')
             echo "current-node-visited=${env.NODE_NAME}"
         }
     }
@@ -46,24 +47,28 @@ node('server') {
 
 stage('Queued everyNode') {
     everyNode('server') {
+        assertValue(env.STAGE_NAME, env.NODE_NAME, 'queued everyNode stage')
         echo "queued-node-visited=${env.NODE_NAME}"
     }
 }
 
 stage('Parallel everyNode named arguments') {
     everyNode(label: 'server', parallel: true) {
+        assertValue(env.STAGE_NAME, env.NODE_NAME, 'parallel named everyNode stage')
         echo "parallel-node-visited=${env.NODE_NAME}"
     }
 }
 
 stage('Parallel everyNode positional arguments') {
     everyNode('server', true) {
+        assertValue(env.STAGE_NAME, env.NODE_NAME, 'parallel positional everyNode stage')
         echo "parallel-node-visited=${env.NODE_NAME}"
     }
 }
 
 stage('All-node everyNode') {
     everyNode {
+        assertValue(env.STAGE_NAME, env.NODE_NAME, 'all-node everyNode stage')
         echo "all-node-visited=${env.NODE_NAME}"
     }
 }
