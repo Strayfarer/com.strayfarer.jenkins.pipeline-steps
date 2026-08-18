@@ -1,6 +1,7 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
 import edu.umd.cs.findbugs.annotations.NonNull;
+import groovy.lang.Closure;
 import hudson.AbortException;
 import hudson.Extension;
 import hudson.model.Computer;
@@ -18,6 +19,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.workflow.cps.steps.ParallelStep;
 import org.jenkinsci.plugins.workflow.steps.BodyExecution;
 import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.Step;
@@ -32,6 +34,9 @@ public final class EveryNodeStep extends Step {
 
     private final String label;
     private boolean parallel;
+    private String nodeName;
+    private String nodeExpression;
+    private Map<String, Closure<?>> branches;
 
     @DataBoundConstructor
     public EveryNodeStep(String label) {
@@ -53,9 +58,29 @@ public final class EveryNodeStep extends Step {
         this.parallel = parallel;
     }
 
+    @DataBoundSetter
+    public void setNodeName(String nodeName) {
+        this.nodeName = nodeName;
+    }
+
+    @DataBoundSetter
+    public void setNodeExpression(String nodeExpression) {
+        this.nodeExpression = nodeExpression;
+    }
+
+    @DataBoundSetter
+    public void setBranches(Map<String, Closure<?>> branches) {
+        this.branches = branches;
+    }
+
     @Override
-    public StepExecution start(StepContext context) {
-        return new Execution(context, label, parallel);
+    public StepExecution start(StepContext context) throws Exception {
+        if (branches != null) {
+            @SuppressWarnings({"rawtypes", "unchecked"})
+            Map<String, Closure> parallelBranches = (Map) branches;
+            return new ParallelStep(parallelBranches, true).start(context);
+        }
+        return new Execution(context, label, parallel, nodeName, nodeExpression);
     }
 
     @Extension
@@ -88,7 +113,7 @@ public final class EveryNodeStep extends Step {
         }
     }
 
-    private record Target(String name, String expression) implements Serializable {
+    record Target(String name, String expression) implements Serializable {
 
         @Serial
         private static final long serialVersionUID = 1L;
@@ -101,6 +126,8 @@ public final class EveryNodeStep extends Step {
 
         private final String label;
         private final boolean parallel;
+        private final String nodeName;
+        private final String nodeExpression;
         private List<Target> targets;
         private List<Target> remaining;
         private List<NodeQueueTask> tasks;
@@ -112,15 +139,19 @@ public final class EveryNodeStep extends Step {
         private Throwable failure;
         private boolean complete;
 
-        private Execution(StepContext context, String label, boolean parallel) {
+        private Execution(StepContext context, String label, boolean parallel, String nodeName, String nodeExpression) {
             super(context);
             this.label = label;
             this.parallel = parallel;
+            this.nodeName = nodeName;
+            this.nodeExpression = nodeExpression;
         }
 
         @Override
         public boolean start() throws Exception {
-            List<Target> selected = snapshot(label);
+            List<Target> selected = nodeName == null
+                    ? snapshot(label)
+                    : List.of(new Target(nodeName, Objects.requireNonNull(nodeExpression)));
             if (selected.isEmpty()) {
                 throw new AbortException(
                         label == null
@@ -348,25 +379,25 @@ public final class EveryNodeStep extends Step {
             }
             return -1;
         }
+    }
 
-        private static List<Target> snapshot(String expression) {
-            Label parsed = expression == null ? null : Label.parseExpression(expression);
-            Jenkins jenkins = Jenkins.get();
-            List<Node> nodes = new ArrayList<>(jenkins.getNodes());
-            if (jenkins.getNumExecutors() > 0) {
-                nodes.add(jenkins);
-            }
-            return nodes.stream()
-                    .filter(node -> parsed == null || parsed.matches(node))
-                    .filter(node -> {
-                        Computer computer = node.toComputer();
-                        return computer != null && computer.isOnline();
-                    })
-                    .map(node -> new Target(
-                            node.getSelfLabel().getName(), node.getSelfLabel().getExpression()))
-                    .sorted(Comparator.comparing(Target::name))
-                    .toList();
+    static List<Target> snapshot(String expression) {
+        Label parsed = expression == null ? null : Label.parseExpression(expression);
+        Jenkins jenkins = Jenkins.get();
+        List<Node> nodes = new ArrayList<>(jenkins.getNodes());
+        if (jenkins.getNumExecutors() > 0) {
+            nodes.add(jenkins);
         }
+        return nodes.stream()
+                .filter(node -> parsed == null || parsed.matches(node))
+                .filter(node -> {
+                    Computer computer = node.toComputer();
+                    return computer != null && computer.isOnline();
+                })
+                .map(node -> new Target(
+                        node.getSelfLabel().getName(), node.getSelfLabel().getExpression()))
+                .sorted(Comparator.comparing(Target::name))
+                .toList();
     }
 
     private static final class InPlaceCallback extends BodyExecutionCallback {

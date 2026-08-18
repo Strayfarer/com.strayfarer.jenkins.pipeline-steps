@@ -55,6 +55,8 @@ stage('Queued everyNode') {
 stage('Parallel everyNode named arguments') {
     everyNode(label: 'server', parallel: true) {
         assertValue(env.STAGE_NAME, env.NODE_NAME, 'parallel named everyNode stage')
+        exec "echo parallel-first-${env.NODE_NAME}"
+        exec "echo parallel-second-${env.NODE_NAME}"
         echo "parallel-node-visited=${env.NODE_NAME}"
     }
 }

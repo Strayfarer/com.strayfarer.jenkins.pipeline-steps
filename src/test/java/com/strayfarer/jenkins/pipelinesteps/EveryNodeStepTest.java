@@ -297,25 +297,41 @@ class EveryNodeStepTest {
     }
 
     @Test
-    void abortPreservesInterruptionResult() throws Throwable {
+    void parallelDurableBranchesAbortCleanly() throws Throwable {
         sessions.then(j -> {
-            j.createOnlineSlave(Label.get("abort-node"));
-            String command = Functions.isWindows()
-                    ? "Write-Output 'every-node-started'; Start-Sleep -Seconds 60"
-                    : "echo every-node-started; sleep 60";
+            List<DumbSlave> nodes = List.of(
+                    j.createOnlineSlave(Label.get("abort-node")),
+                    j.createOnlineSlave(Label.get("abort-node")),
+                    j.createOnlineSlave(Label.get("abort-node")));
+            String firstCommand = Functions.isWindows() ? "Write-Output 'every-node-first'" : "echo every-node-first";
+            String runningCommand = Functions.isWindows()
+                    ? "Write-Output 'every-node-running'; Start-Sleep -Seconds 60"
+                    : "echo every-node-running; sleep 60";
             WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "abort-every-node");
             job.setDefinition(new CpsFlowDefinition("""
-                    everyNode('abort-node') {
+                    everyNode(label: 'abort-node', parallel: true) {
+                        exec "%s"
                         exec "%s"
                     }
-                    """.formatted(command), true));
+                    """.formatted(firstCommand, runningCommand), true));
             WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
-            j.waitForMessage("every-node-started", run);
+            try {
+                assertTrue(waitForOccurrences(run, "every-node-running", nodes.size()), JenkinsRule.getLog(run));
 
-            run.doStop();
-            j.waitForCompletion(run);
+                run.doStop();
+                assertTrue(waitForCompletion(run, 45), JenkinsRule.getLog(run));
 
-            j.assertBuildStatus(Result.ABORTED, run);
+                j.assertBuildStatus(Result.ABORTED, run);
+                String log = JenkinsRule.getLog(run);
+                assertEquals(nodes.size(), occurrences(log, "every-node-first"));
+                assertEquals(nodes.size(), occurrences(log, "every-node-running"));
+                assertTrue(!log.contains("cannot start writing logs to a finished node"), log);
+            } finally {
+                if (run.isBuilding()) {
+                    run.doKill();
+                    j.waitForCompletion(run);
+                }
+            }
         });
     }
 
@@ -504,11 +520,28 @@ class EveryNodeStepTest {
 
     @SuppressWarnings("BusyWait") // Poll Pipeline completion with a bounded timeout.
     private static boolean waitForCompletion(WorkflowRun run) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        return waitForCompletion(run, 15);
+    }
+
+    @SuppressWarnings("BusyWait") // Poll Pipeline completion with a bounded timeout.
+    private static boolean waitForCompletion(WorkflowRun run, long timeoutSeconds) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(timeoutSeconds);
         while (run.isBuilding() && System.nanoTime() < deadline) {
             Thread.sleep(100);
         }
         return !run.isBuilding();
+    }
+
+    @SuppressWarnings("BusyWait") // Poll streamed Pipeline output with a bounded timeout.
+    private static boolean waitForOccurrences(WorkflowRun run, String message, int expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15);
+        while (System.nanoTime() < deadline) {
+            if (occurrences(JenkinsRule.getLog(run), message) == expected) {
+                return true;
+            }
+            Thread.sleep(100);
+        }
+        return false;
     }
 
     private static List<String> queuedNodeTasks(WorkflowJob owner) {
