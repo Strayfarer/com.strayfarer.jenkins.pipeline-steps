@@ -11,6 +11,24 @@ node('server') {
         assertValue(execStdout('printf host-stdout-ok'), 'host-stdout-ok', 'execStdout on host')
     }
 
+    stage('Dotenv scope') {
+        writeFile file: 'pipeline.env', text: 'DOTENV_CRLF=parsed\r\nDOTENV_EMPTY=\r\nDOTENV_QUOTED="value # retained" # comment\r\n'
+        writeFile file: 'pipeline-empty.env', text: ''
+        env.DOTENV_CRLF = 'outer'
+
+        withEnvFile('pipeline.env') {
+            assertValue(env.DOTENV_CRLF, 'parsed', 'CRLF dotenv value')
+            assertValue(env.DOTENV_EMPTY, '', 'empty dotenv value')
+            assertValue(env.DOTENV_QUOTED, 'value # retained', 'quoted dotenv value')
+        }
+        assertValue(env.DOTENV_CRLF, 'outer', 'dotenv scope restoration')
+        assertValue(env.DOTENV_QUOTED, null, 'dotenv variable removal')
+
+        withEnvFile('pipeline-empty.env') {
+            echo 'empty-dotenv-body-ran'
+        }
+    }
+
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
         stage('Container exec') {
             insideDockerContainer('agents_compose-unity') {

@@ -1,17 +1,18 @@
 # Strayfarer Pipeline Steps
 
 Generic, restart-safe Jenkins Pipeline steps for running commands on agents or
-inside existing Docker sidecars, and for running a Pipeline body on every node
-matching a label expression.
+inside existing Docker sidecars, applying dotenv files, and running a Pipeline
+body on every node matching a label expression.
 
 ## Scope
 
-The plugin provides four Pipeline steps:
+The plugin provides the following Pipeline steps:
 
 - `exec`, `execStatus`, and `execStdout` run a command using the native shell of
   the current agent or active Docker sidecar.
 - `insideDockerContainer` lexically routes nested `exec*` calls into a named,
   already-running Docker container.
+- `withEnvFile` applies a dotenv file to a Pipeline body.
 - `everyNode` runs a Pipeline body once on every online node matching a Jenkins
   label expression.
 
@@ -139,6 +140,38 @@ agent must have Docker CLI access to the daemon hosting the sidecar.
 Linux containers must provide `/bin/sh`, `setsid`, and `pkill`. Windows
 containers must provide PowerShell 7 as `pwsh` and `taskkill.exe`.
 
+## Dotenv files
+
+`withEnvFile` reads a UTF-8 dotenv file from the current workspace and applies
+its variables lexically to a Pipeline body. The no-argument form reads `.env`:
+
+```groovy
+withEnvFile {
+    exec 'dotnet test'
+}
+
+withEnvFile('configuration/build.env') {
+    exec 'dotnet test'
+}
+```
+
+Missing files fail the step. Empty files are valid and run the body without
+adding variables. Existing environment values are restored after success,
+failure, or interruption, and nested scopes restore the enclosing values.
+
+The parser follows the de facto `dotenv` grammar. It supports LF, CRLF, and CR
+line endings; a leading UTF-8 byte-order mark; blank lines and comments;
+optional `export`; empty values; inline comments; unquoted, single-quoted,
+double-quoted, and backtick-quoted values; multiline quoted values; and `\n`
+and `\r` escapes in double-quoted values. Duplicate keys use the last value.
+Variable interpolation is not performed.
+
+The Pipeline graph records the file and every applied `NAME=value` assignment
+on the `withEnvFile` node for Stage Logs and other Pipeline visualizations.
+Control characters are escaped in that label. Assignments are not written to
+the build's console log. Dotenv values are not treated as credentials and are
+not masked.
+
 ## Every matching node
 
 `everyNode` accepts the same kind of label expression as `node` and executes its
@@ -206,6 +239,7 @@ The new names let this plugin coexist with the existing Jenkins Shared Library:
 | `callShellStatus`           | `execStatus`              |
 | `callShellStdout`           | `execStdout`              |
 | `withUnity` execution scope | `insideDockerContainer`   |
+| `withEnvFile`               | `withEnvFile`              |
 | `executeOnAll`              | `everyNode`               |
 
 The Unity-specific wrapper can remain in the Shared Library:
