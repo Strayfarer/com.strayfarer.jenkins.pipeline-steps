@@ -230,10 +230,10 @@ POM. The minimum Jenkins version is 2.555.3.
 
 On Windows, use `mvnw.cmd` instead of `./mvnw`.
 
-Java is formatted by Palantir Java Format 2.96.0 through Spotless. IntelliJ
-IDEA requires the matching `palantir-java-format` plugin; the project declares
-and enables that exact plugin version. After IntelliJ installs it, restart the
-IDE. `Code | Reformat Code` then uses the same formatter as Maven. Run
+Java is formatted by Palantir Java Format 2.97.0 through Spotless. IntelliJ
+IDEA requires `palantir-java-format` plugin version 2.97.0 or newer; the project
+declares and enables that plugin. After IntelliJ installs it, restart the IDE.
+`Code | Reformat Code` then uses the same formatter style as Maven. Run
 `./mvnw spotless:apply` to format from the command line and
 `./mvnw spotless:check` to check formatting without changing files. Use
 IntelliJ's `Optimize Imports` action when imports change; its import layout is

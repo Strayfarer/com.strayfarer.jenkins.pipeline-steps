@@ -44,7 +44,7 @@
     <revision>SNAPSHOT</revision>
     <scmTag>HEAD</scmTag>
     <jenkins.version>2.555.3</jenkins.version>
-    <palantir.java.format.version>2.96.0</palantir.java.format.version>
+    <palantir.java.format.version>2.97.0</palantir.java.format.version>
     <spotless.check.skip>false</spotless.check.skip>
   </properties>
 
