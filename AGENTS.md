@@ -65,6 +65,42 @@ faithfully reproduce CPS; validate changed call chains, repository tests,
 small safe runtime probes, then an authorized representative Pipeline when
 needed.
 
+## Jenkins Plugins
+
+- Keep this plugin's integration tests in `.jenkins/Jenkinsfile.groovy`. The
+  Jenkinsfile must exercise all of the plugin's Pipeline scripts and should
+  retain assertions for previously discovered regressions.
+- The Jenkins controller runs that file through a job under
+  `https://ci.slothsoft.net/job/jenkins-plugins/` whose name matches the Jenkins
+  plugin ID. Watch the full job console log for errors whenever running integration tests; a scheduled
+  build alone does not establish success.
+- The durable test servers are `Mörkö`, a Linux server that also hosts the
+  Jenkins container; `Garl`, a Linux server with a GPU; and `Dende`, a Windows
+  server with a GPU. Other Jenkins agents are temporary build helpers: do not
+  mention them by name in `.jenkins/Jenkinsfile.groovy`. Target helpers only by
+  label, and require an available helper matching a tested label to pass the
+  same integration tests as the named servers.
+- The deployment target is container `jenkins` on Docker context `groke`.
+  Always pass `--context groke`; do not rely on the active Docker context. This
+  installation uses `JENKINS_HOME=/jenkins/home`.
+- Restart Jenkins only when it has no running or queued jobs. After restarting,
+  wait for the container log to report `Jenkins is fully up and running`,
+  verify the plugin version in the installed JPI manifest, and check startup
+  logs for plugin-load failures.
+
+A complete release cycle is:
+
+1. Implement the features and update `.jenkins/Jenkinsfile.groovy` as needed.
+2. Run the local test suite.
+3. Commit and push the changes.
+4. Watch the GitHub Actions checks and require them all to pass.
+5. Tag the new version and publish its release artifacts.
+6. Install that exact version into `groke` container `jenkins`.
+7. Restart Jenkins after confirming it is idle.
+8. Run this plugin's job in `jenkins-plugins` and watch its complete console log.
+9. If any check or integration test fails, fix the issue and repeat the full
+   cycle from step 1 with a new version.
+
 ## General
 
 ### Meta commands
