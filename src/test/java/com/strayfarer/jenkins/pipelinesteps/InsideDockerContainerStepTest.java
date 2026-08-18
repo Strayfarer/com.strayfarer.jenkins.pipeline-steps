@@ -71,6 +71,24 @@ class InsideDockerContainerStepTest {
     }
 
     @Test
+    void execStatusReturnsTheContainerProcessExitStatus() throws Throwable {
+        sessions.then(j -> {
+            installFakeDocker(j);
+            WorkflowRun run = build(j, """
+                    node {
+                        insideDockerContainer('status') {
+                            def status = execStatus 'exit 9'
+                            echo "container-status=${status}"
+                        }
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("container-status=9", run);
+        });
+    }
+
+    @Test
     void environmentAllowlistIsNormalizedAndValuesStayOutOfArguments() throws Throwable {
         sessions.then(j -> {
             Path log = installFakeDocker(j);

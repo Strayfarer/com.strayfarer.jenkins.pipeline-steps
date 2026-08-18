@@ -43,6 +43,7 @@ final class DockerCommandTaskFactory {
         if ("linux".equals(docker.os())) {
             arguments.addAll(List.of(
                     "setsid",
+                    "--wait",
                     "/bin/sh",
                     "-c",
                     LINUX_SUPERVISOR,
