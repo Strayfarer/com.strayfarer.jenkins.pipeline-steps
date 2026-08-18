@@ -93,7 +93,7 @@ integration tests as the named servers.
 
 When release operations are authorized, the complete release cycle is:
 
-1. Implement the features and update `.jenkins/Jenkinsfile.groovy` as needed.
+1. Implement the features and update the integration tests in `.jenkins/Jenkinsfile.groovy` as needed.
 2. Run the local test suite.
 3. Commit, then build an unpublished candidate HPI with version `<next-version>-rc.<commit-hash>`.
 4. Install the candidate HPI into `groke` container `jenkins`.
@@ -102,7 +102,7 @@ When release operations are authorized, the complete release cycle is:
    for plugin-load failures.
 6. Run this plugin's job in `https://ci.slothsoft.net/job/jenkins/` and watch its complete console log.
 7. If the candidate integration test fails, fix the issue, then repeat from step 2.
-8. After the candidate passes, push the changes, then watch the GitHub CI checks.
+8. After the candidate passes, amend CHANGELOG.md, commit and push the changes, then watch the GitHub CI checks.
 9. If the GitHub CI checks fail, fix the issue, then repeat from step 2.
 10. After GitHub CI passes, tag the final version and publish its release artifacts.
 11. Download and install the final HPI into `groke` container `jenkins`.
