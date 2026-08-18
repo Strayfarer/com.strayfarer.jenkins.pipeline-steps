@@ -150,7 +150,19 @@ everyNode('unity && linux') {
 }
 ```
 
-Execution is sequential by default. Parallel execution is explicit:
+Omitting the label snapshots every online node:
+
+```groovy
+everyNode {
+    echo "Running on ${env.NODE_NAME}"
+}
+```
+
+Execution is sequential by default. Each iteration queues the remaining
+snapshotted node names together, so Jenkins selects whichever remaining node is
+available first. If `everyNode` is called from a matching node context, that
+node runs first in the existing executor and workspace instead of allocating a
+second executor. Parallel execution is explicit:
 
 ```groovy
 everyNode(label: 'unity', parallel: true) {
@@ -160,16 +172,19 @@ everyNode(label: 'unity', parallel: true) {
 
 The selection contract is:
 
-1. Parse the Jenkins label expression.
-2. Snapshot the concrete online nodes that match when the step starts.
-3. Allocate each selected node through the normal Jenkins queue.
-4. Invoke the body inside that node's executor and workspace.
+1. Parse the Jenkins label expression when one is supplied.
+2. Snapshot all concrete online nodes that match, or all online nodes when the
+   label is omitted.
+3. Run a matching current node first in its inherited Pipeline context.
+4. Allocate every other selected node through the normal Jenkins queue.
+5. Invoke the body inside that node's executor and workspace.
 
 The normal `env.NODE_NAME` identifies the selected node; the body receives no
-positional arguments. The built-in node is eligible only when it matches the
-label and has executors. No matches fail the step with a clear error. If a node
-goes offline after selection, normal exact-node queue behavior applies and the
-branch waits for that node to return.
+positional arguments. The built-in node is eligible when it has executors and
+matches the supplied label, if any. No matches fail the step with a clear error.
+If a node goes offline after selection, normal exact-node queue behavior applies
+and the branch waits for that node to return. When a branch remains queued,
+`everyNode` prints Jenkins's blockage reason after 15 seconds.
 
 Parallel branches are named after their concrete nodes. A failure in any branch
 fails `everyNode`; interruption is propagated without conversion to an

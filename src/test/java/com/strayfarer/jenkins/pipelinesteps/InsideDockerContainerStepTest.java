@@ -64,6 +64,8 @@ class InsideDockerContainerStepTest {
             List<String> lines = Files.readAllLines(log);
             assertEquals(1, countInspections(lines, "|outer"));
             assertEquals(1, countInspections(lines, "|inner"));
+            assertTrue(
+                    Files.readString(log).contains("{{.Id}} {{.State.Running}} {{.Platform}}"), Files.readString(log));
             assertEquals(List.of("outer", "inner", "outer"), executions(lines));
         });
     }

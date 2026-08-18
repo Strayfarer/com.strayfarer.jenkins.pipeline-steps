@@ -7,15 +7,19 @@ import hudson.model.Computer;
 import hudson.model.Label;
 import hudson.model.Node;
 import hudson.model.Queue;
+import java.io.IOException;
 import java.io.Serial;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import jenkins.model.Jenkins;
+import org.jenkinsci.plugins.workflow.steps.BodyExecution;
+import org.jenkinsci.plugins.workflow.steps.BodyExecutionCallback;
 import org.jenkinsci.plugins.workflow.steps.Step;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.jenkinsci.plugins.workflow.steps.StepDescriptor;
@@ -31,9 +35,6 @@ public final class EveryNodeStep extends Step {
 
     @DataBoundConstructor
     public EveryNodeStep(String label) {
-        if (label == null) {
-            throw new IllegalArgumentException("label is required");
-        }
         this.label = label;
     }
 
@@ -87,7 +88,7 @@ public final class EveryNodeStep extends Step {
         }
     }
 
-    private record Target(String name, String selfLabel) implements Serializable {
+    private record Target(String name, String expression) implements Serializable {
 
         @Serial
         private static final long serialVersionUID = 1L;
@@ -101,7 +102,11 @@ public final class EveryNodeStep extends Step {
         private final String label;
         private final boolean parallel;
         private List<Target> targets;
+        private List<Target> remaining;
         private List<NodeQueueTask> tasks;
+        private List<Boolean> active;
+        private BodyExecution inPlaceBody;
+        private volatile int inPlaceIndex = -1;
         private int next;
         private int finished;
         private Throwable failure;
@@ -117,15 +122,31 @@ public final class EveryNodeStep extends Step {
         public boolean start() throws Exception {
             List<Target> selected = snapshot(label);
             if (selected.isEmpty()) {
-                throw new AbortException("No online Jenkins nodes match label '" + label + "'");
+                throw new AbortException(
+                        label == null
+                                ? "No online Jenkins nodes are available"
+                                : "No online Jenkins nodes match label '" + label + "'");
+            }
+            Node currentNode = getContext().get(Node.class);
+            String currentNodeName =
+                    currentNode == null ? null : currentNode.getSelfLabel().getName();
+            int currentIndex = indexOf(selected, currentNodeName);
+            if (currentIndex > 0) {
+                List<Target> reordered = new ArrayList<>(selected);
+                reordered.add(0, reordered.remove(currentIndex));
+                selected = List.copyOf(reordered);
             }
             int initialSequential = -1;
             synchronized (this) {
                 targets = selected;
+                remaining = new ArrayList<>(selected);
                 tasks = new ArrayList<>();
+                active = new ArrayList<>();
                 for (int index = 0; index < selected.size(); index++) {
                     tasks.add(null);
+                    active.add(false);
                 }
+                inPlaceIndex = currentIndex >= 0 ? 0 : -1;
                 if (parallel) {
                     next = selected.size();
                 } else {
@@ -134,6 +155,10 @@ public final class EveryNodeStep extends Step {
             }
             if (parallel) {
                 int index = 0;
+                if (inPlaceIndex == 0) {
+                    launchInPlace(0);
+                    index++;
+                }
                 try {
                     for (; index < selected.size(); index++) {
                         launch(index);
@@ -148,7 +173,10 @@ public final class EveryNodeStep extends Step {
                     for (NodeQueueTask task : active) {
                         task.cancel(exception);
                     }
+                    cancelInPlace(exception);
                 }
+            } else if (inPlaceIndex == 0) {
+                launchInPlace(initialSequential);
             } else {
                 launch(initialSequential);
             }
@@ -157,19 +185,20 @@ public final class EveryNodeStep extends Step {
 
         @Override
         public void stop(@NonNull Throwable cause) {
-            List<NodeQueueTask> active;
+            List<NodeQueueTask> activeTasks;
             synchronized (this) {
                 if (complete) {
                     return;
                 }
                 failure = cause;
-                active = tasks == null
+                activeTasks = tasks == null
                         ? List.of()
                         : tasks.stream().filter(Objects::nonNull).toList();
             }
-            for (NodeQueueTask task : active) {
+            for (NodeQueueTask task : activeTasks) {
                 task.cancel(cause);
             }
+            cancelInPlace(cause);
         }
 
         @Override
@@ -191,29 +220,52 @@ public final class EveryNodeStep extends Step {
         }
 
         private synchronized void launch(int index) throws Exception {
-            Target target = targets.get(index);
             NodeContext context = new NodeContext(getContext(), this, index);
-            NodeQueueTask task = new NodeQueueTask(context, target.name(), target.selfLabel());
+            List<Target> candidates = parallel ? List.of(targets.get(index)) : List.copyOf(remaining);
+            NodeQueueTask task = new NodeQueueTask(
+                    context,
+                    candidates.stream().map(Target::name).toList(),
+                    candidates.stream().map(Target::expression).toList());
             tasks.set(index, task);
+            active.set(index, true);
             Queue.WaitingItem item = task.schedule();
             if (item == null) {
-                throw new AbortException("Jenkins queue refused node '" + target.name() + "'");
+                throw new AbortException("Jenkins queue refused nodes "
+                        + candidates.stream().map(Target::name).toList());
             }
         }
 
-        private void childSucceeded(int index) {
+        private synchronized void launchInPlace(int index) {
+            Target target = targets.get(index);
+            active.set(index, true);
+            inPlaceBody = getContext()
+                    .newBodyInvoker()
+                    .withDisplayName(target.name())
+                    .withCallback(new InPlaceCallback(this, index, target.name()))
+                    .start();
+        }
+
+        private void childSucceeded(int index, Object result) {
             int following = -1;
             boolean reportSuccess = false;
             Throwable reportedFailure = null;
             synchronized (this) {
-                if (complete || tasks.get(index) == null) {
+                if (complete || !active.get(index)) {
                     return;
                 }
+                active.set(index, false);
                 tasks.set(index, null);
+                if (index == inPlaceIndex) {
+                    inPlaceBody = null;
+                }
                 finished++;
-                if (!parallel && failure == null && next < targets.size()) {
+                if (!parallel && !removeSelectedTarget(result)) {
+                    failure = new IOException("everyNode completed on an unsnapshotted node: " + result);
+                }
+                if (!parallel && failure == null && !remaining.isEmpty()) {
                     following = next++;
-                } else if (finished == targets.size() || (!parallel && failure != null)) {
+                } else if ((parallel && finished == targets.size())
+                        || (!parallel && (remaining.isEmpty() || failure != null))) {
                     complete = true;
                     reportSuccess = failure == null;
                     reportedFailure = failure;
@@ -232,14 +284,32 @@ public final class EveryNodeStep extends Step {
             }
         }
 
+        private boolean removeSelectedTarget(Object result) {
+            if (!(result instanceof String selectedName)) {
+                return false;
+            }
+            Iterator<Target> iterator = remaining.iterator();
+            while (iterator.hasNext()) {
+                if (iterator.next().name().equals(selectedName)) {
+                    iterator.remove();
+                    return true;
+                }
+            }
+            return false;
+        }
+
         private void childFailed(int index, Throwable cause) {
             Throwable reportedFailure = null;
             synchronized (this) {
                 if (complete) {
                     return;
                 }
-                if (tasks.get(index) != null) {
+                if (active.get(index)) {
+                    active.set(index, false);
                     tasks.set(index, null);
+                    if (index == inPlaceIndex) {
+                        inPlaceBody = null;
+                    }
                     finished++;
                 }
                 if (failure == null) {
@@ -257,23 +327,71 @@ public final class EveryNodeStep extends Step {
             }
         }
 
+        private void cancelInPlace(Throwable cause) {
+            BodyExecution body;
+            synchronized (this) {
+                body = inPlaceBody;
+            }
+            if (body != null) {
+                body.cancel(cause);
+            }
+        }
+
+        private static int indexOf(List<Target> targets, String nodeName) {
+            if (nodeName == null) {
+                return -1;
+            }
+            for (int index = 0; index < targets.size(); index++) {
+                if (targets.get(index).name().equals(nodeName)) {
+                    return index;
+                }
+            }
+            return -1;
+        }
+
         private static List<Target> snapshot(String expression) {
-            Label parsed = Label.parseExpression(expression);
+            Label parsed = expression == null ? null : Label.parseExpression(expression);
             Jenkins jenkins = Jenkins.get();
             List<Node> nodes = new ArrayList<>(jenkins.getNodes());
             if (jenkins.getNumExecutors() > 0) {
                 nodes.add(jenkins);
             }
             return nodes.stream()
-                    .filter(parsed::matches)
+                    .filter(node -> parsed == null || parsed.matches(node))
                     .filter(node -> {
                         Computer computer = node.toComputer();
                         return computer != null && computer.isOnline();
                     })
                     .map(node -> new Target(
-                            node.getSelfLabel().getName(), node.getSelfLabel().getName()))
+                            node.getSelfLabel().getName(), node.getSelfLabel().getExpression()))
                     .sorted(Comparator.comparing(Target::name))
                     .toList();
+        }
+    }
+
+    private static final class InPlaceCallback extends BodyExecutionCallback {
+
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        private final Execution owner;
+        private final int index;
+        private final String nodeName;
+
+        private InPlaceCallback(Execution owner, int index, String nodeName) {
+            this.owner = owner;
+            this.index = index;
+            this.nodeName = nodeName;
+        }
+
+        @Override
+        public void onSuccess(StepContext context, Object result) {
+            owner.childSucceeded(index, nodeName);
+        }
+
+        @Override
+        public void onFailure(StepContext context, Throwable failure) {
+            owner.childFailed(index, failure);
         }
     }
 
@@ -293,7 +411,7 @@ public final class EveryNodeStep extends Step {
 
         @Override
         public void onSuccess(Object result) {
-            owner.childSucceeded(index);
+            owner.childSucceeded(index, result);
         }
 
         @Override

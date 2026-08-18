@@ -32,12 +32,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.stream.Collectors;
 import jenkins.model.CauseOfInterruption;
 import jenkins.model.Jenkins;
 import jenkins.model.queue.AsynchronousExecution;
 import jenkins.security.QueueItemAuthenticator;
 import jenkins.security.QueueItemAuthenticatorProvider;
+import jenkins.util.Timer;
 import org.jenkinsci.plugins.durabletask.executors.ContinuableExecutable;
 import org.jenkinsci.plugins.durabletask.executors.ContinuedTask;
 import org.jenkinsci.plugins.workflow.steps.BodyExecution;
@@ -52,23 +56,37 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
     @Serial
     private static final long serialVersionUID = 1L;
 
+    private static final Logger LOGGER = Logger.getLogger(NodeQueueTask.class.getName());
+
     private final String id = UUID.randomUUID().toString();
     private final StepContext context;
-    private final String nodeName;
-    private final String selfLabel;
+    private final List<String> nodeNames;
+    private final List<String> nodeExpressions;
+    private final String labelExpression;
     private final String runId;
     private final String authentication;
     private volatile boolean started;
     private volatile boolean completed;
+    private volatile String selectedNodeName;
+    private volatile String selectedNodeExpression;
     private volatile BodyExecution body;
     private transient QueueTaskFuture<?> queueFuture;
     private NodeExecutionContext nodeContext;
     private Throwable cancellation;
 
     NodeQueueTask(StepContext context, String nodeName, String selfLabel) throws IOException, InterruptedException {
+        this(context, List.of(nodeName), List.of(selfLabel));
+    }
+
+    NodeQueueTask(StepContext context, List<String> nodeNames, List<String> nodeExpressions)
+            throws IOException, InterruptedException {
+        if (nodeNames.isEmpty() || nodeNames.size() != nodeExpressions.size()) {
+            throw new IllegalArgumentException("node names and expressions must be nonempty and have equal size");
+        }
         this.context = context;
-        this.nodeName = nodeName;
-        this.selfLabel = selfLabel;
+        this.nodeNames = List.copyOf(nodeNames);
+        this.nodeExpressions = List.copyOf(nodeExpressions);
+        this.labelExpression = String.join(" || ", nodeExpressions);
         this.runId = context.get(Run.class).getExternalizableId();
         Authentication current = Jenkins.getAuthentication2();
         this.authentication = current.equals(ACL.SYSTEM2) ? null : current.getName();
@@ -76,7 +94,8 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
 
     @Override
     public Label getAssignedLabel() {
-        return Label.get(selfLabel);
+        String expression = selectedNodeExpression == null ? labelExpression : selectedNodeExpression;
+        return Label.parseExpression(expression);
     }
 
     @Override
@@ -86,12 +105,12 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
 
     @Override
     public String getName() {
-        return nodeName;
+        return selectedNodeName == null ? String.join(" || ", nodeNames) : selectedNodeName;
     }
 
     @Override
     public String getDisplayName() {
-        return "everyNode on " + nodeName;
+        return "everyNode on " + getName();
     }
 
     @Override
@@ -166,8 +185,29 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
         Queue.WaitingItem item = Queue.getInstance().schedule2(this, 0).getCreateItem();
         if (item != null) {
             queueFuture = item.getFuture();
+            Timer.get().schedule(this::reportWaiting, 15, TimeUnit.SECONDS);
         }
         return item;
+    }
+
+    void reportWaiting() {
+        Queue.Item item = Queue.getInstance().getItem(this);
+        if (item == null) {
+            return;
+        }
+        try {
+            TaskListener listener = context.get(TaskListener.class);
+            listener.getLogger().println("Still waiting to schedule everyNode on '" + getName() + "'");
+            CauseOfBlockage blockage = item.getCauseOfBlockage();
+            if (blockage != null) {
+                blockage.print(listener);
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            LOGGER.log(Level.FINE, "Interrupted while reporting everyNode queue status for " + getName(), exception);
+        } catch (IOException exception) {
+            LOGGER.log(Level.FINE, "Could not report everyNode queue status for " + getName(), exception);
+        }
     }
 
     void cancel(Throwable cause) {
@@ -214,7 +254,7 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
             return;
         }
         if (schedule() == null) {
-            finish(new IOException("Jenkins queue refused node '" + nodeName + "' after restart"));
+            finish(new IOException("Jenkins queue refused node selection '" + getName() + "' after restart"));
         }
     }
 
@@ -276,8 +316,15 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
                 Computer computer = executor.getOwner();
                 Node node = computer.getNode();
                 if (node == null) {
-                    throw new IOException("Selected Jenkins node is offline: " + nodeName);
+                    throw new IOException("Selected Jenkins node is offline");
                 }
+                String actualNodeName = node.getSelfLabel().getName();
+                int selectedIndex = nodeNames.indexOf(actualNodeName);
+                if (selectedIndex < 0) {
+                    throw new IOException("Jenkins allocated unsnapshotted node: " + actualNodeName);
+                }
+                selectedNodeName = actualNodeName;
+                selectedNodeExpression = nodeExpressions.get(selectedIndex);
                 TaskListener listener = context.get(TaskListener.class);
                 Run<?, ?> run = context.get(Run.class);
                 if (!(run.getParent() instanceof TopLevelItem)) {
@@ -285,7 +332,7 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
                 }
                 FilePath workspace = node.getWorkspaceFor((TopLevelItem) run.getParent());
                 if (workspace == null) {
-                    throw new IOException("Selected Jenkins node has no workspace: " + nodeName);
+                    throw new IOException("Selected Jenkins node has no workspace: " + actualNodeName);
                 }
                 lease = computer.getWorkspaceList().allocate(workspace);
                 workspace = lease.path;
@@ -323,10 +370,10 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
                 if (!started) {
                     started = true;
                     nodeContext = new NodeExecutionContext(
-                            NodeQueueTask.this, nodeName, workspace.getRemote(), executor, lease);
+                            NodeQueueTask.this, actualNodeName, workspace.getRemote(), executor, lease);
                     body = context.newBodyInvoker()
                             .withContexts(environment, nodeContext)
-                            .withDisplayName(nodeName)
+                            .withDisplayName(actualNodeName)
                             .withCallback(new Callback(NodeQueueTask.this))
                             .start();
                 } else if (nodeContext != null) {
@@ -361,11 +408,11 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
         @Override
         public CauseOfBlockage canTake(Node node, Queue.BuildableItem item) {
             if (item.task instanceof NodeQueueTask task
-                    && !task.selfLabel.equals(node.getSelfLabel().getName())) {
+                    && !task.accepts(node.getSelfLabel().getName())) {
                 return new CauseOfBlockage() {
                     @Override
                     public String getShortDescription() {
-                        return "Must run on " + task.nodeName;
+                        return "Must run on one of " + task.nodeNames;
                     }
                 };
             }
@@ -453,10 +500,15 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
             state.complete();
         }
         if (failure == null) {
-            context.onSuccess(null);
+            context.onSuccess(selectedNodeName);
         } else {
             context.onFailure(failure);
         }
+    }
+
+    private boolean accepts(String nodeName) {
+        String selected = selectedNodeName;
+        return selected == null ? nodeNames.contains(nodeName) : selected.equals(nodeName);
     }
 
     @Extension

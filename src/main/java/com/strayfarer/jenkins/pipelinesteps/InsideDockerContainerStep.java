@@ -71,10 +71,10 @@ public final class InsideDockerContainerStep extends Step {
     public StepExecution start(StepContext context) throws Exception {
         Launcher launcher = context.get(Launcher.class);
         String inspectionScript = launcher.isUnix()
-                ? "output=$(docker inspect --type container --format '{{.Id}} {{.State.Running}} {{.Os}}' -- \"$"
+                ? "output=$(docker inspect --type container --format '{{.Id}} {{.State.Running}} {{.Platform}}' -- \"$"
                         + INSPECT_CONTAINER
                         + "\")\nstatus=$?\nprintf '%s\\n%s\\n' \"$status\" \"$output\"\nexit 0"
-                : "$output = & docker inspect --type container --format '{{.Id}} {{.State.Running}} {{.Os}}' -- $env:"
+                : "$output = & docker inspect --type container --format '{{.Id}} {{.State.Running}} {{.Platform}}' -- $env:"
                         + INSPECT_CONTAINER
                         + "\r\n$status = $LASTEXITCODE\r\nWrite-Output $status\r\n$output\r\nexit 0";
         DurableTask task = CommandTaskFactory.nativeTask(inspectionScript, launcher, context.get(EnvVars.class), false);

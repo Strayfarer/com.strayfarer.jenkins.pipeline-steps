@@ -43,7 +43,7 @@ class EveryNodeStepTest {
     private final JenkinsSessionExtension sessions = new JenkinsSessionExtension();
 
     @Test
-    void snapshotsOnlyMatchingOnlineNodesAndRunsSequentially() throws Throwable {
+    void snapshotsMatchingOnlineNodesAndRunsNextAvailableSequentially() throws Throwable {
         sessions.then(j -> {
             DumbSlave second = j.createOnlineSlave();
             second.setLabelString("unity linux");
@@ -52,23 +52,90 @@ class EveryNodeStepTest {
             DumbSlave excluded = j.createOnlineSlave(Label.get("unity"));
             DumbSlave offline = j.createOnlineSlave(Label.get("unity linux"));
             requireNonNull(offline.getComputer()).disconnect(null).get(30, TimeUnit.SECONDS);
-
-            WorkflowRun run = build(j, """
+            List<DumbSlave> selected = Stream.of(first, second)
+                    .sorted(java.util.Comparator.comparing(DumbSlave::getNodeName))
+                    .toList();
+            WorkflowRun blocker = startBlocker(j, selected.get(0), "sequential-first-blocker");
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "next-available");
+            job.setDefinition(new CpsFlowDefinition("""
                     everyNode('unity && linux') {
                         echo "visited=${env.NODE_NAME}"
+                    }
+                    """, true));
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
+
+            try {
+                j.waitForMessage("visited=" + selected.get(1).getNodeName(), run);
+                assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
+                j.assertLogNotContains("visited=" + selected.get(0).getNodeName(), run);
+            } finally {
+                blocker.doStop();
+                j.waitForCompletion(blocker);
+            }
+
+            j.assertBuildStatusSuccess(j.waitForCompletion(run));
+            String log = JenkinsRule.getLog(run);
+            assertEquals(1, occurrences(log, "visited=" + selected.get(0).getNodeName()));
+            assertEquals(1, occurrences(log, "visited=" + selected.get(1).getNodeName()));
+            assertEquals(0, occurrences(log, "visited=" + excluded.getNodeName()));
+            assertEquals(0, occurrences(log, "visited=" + offline.getNodeName()));
+            assertTrue(
+                    log.indexOf("visited=" + selected.get(1).getNodeName())
+                            < log.indexOf("visited=" + selected.get(0).getNodeName()),
+                    log);
+        });
+    }
+
+    @Test
+    void omittedLabelRunsOnEveryOnlineNode() throws Throwable {
+        sessions.then(j -> {
+            j.jenkins.setNumExecutors(1);
+            DumbSlave first = j.createOnlineSlave(Label.get("first-label"));
+            DumbSlave second = j.createOnlineSlave(Label.get("second-label"));
+            DumbSlave offline = j.createOnlineSlave(Label.get("offline-label"));
+            requireNonNull(offline.getComputer()).disconnect(null).get(30, TimeUnit.SECONDS);
+
+            WorkflowRun run = build(j, """
+                    everyNode {
+                        echo "all-visited=${env.NODE_NAME}"
                     }
                     """);
 
             j.assertBuildStatusSuccess(run);
             String log = JenkinsRule.getLog(run);
-            List<String> expected = Stream.of(first.getNodeName(), second.getNodeName())
-                    .sorted()
-                    .toList();
-            assertEquals(1, occurrences(log, "visited=" + expected.get(0)));
-            assertEquals(1, occurrences(log, "visited=" + expected.get(1)));
-            assertEquals(0, occurrences(log, "visited=" + excluded.getNodeName()));
-            assertEquals(0, occurrences(log, "visited=" + offline.getNodeName()));
-            assertTrue(log.indexOf("visited=" + expected.get(0)) < log.indexOf("visited=" + expected.get(1)), log);
+            assertEquals(
+                    1,
+                    occurrences(log, "all-visited=" + j.jenkins.getSelfLabel().getName()));
+            assertEquals(1, occurrences(log, "all-visited=" + first.getNodeName()));
+            assertEquals(1, occurrences(log, "all-visited=" + second.getNodeName()));
+            assertEquals(0, occurrences(log, "all-visited=" + offline.getNodeName()));
+        });
+    }
+
+    @Test
+    void matchingCurrentNodeRunsFirstWithoutAllocatingAnotherExecutor() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave current = j.createOnlineSlave(Label.get("self-target"));
+            current.setNumExecutors(1);
+            DumbSlave other = j.createOnlineSlave(Label.get("self-target"));
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "current-node-first");
+            job.setDefinition(new CpsFlowDefinition(("""
+                    node('%s') {
+                        everyNode('self-target') {
+                            echo "self-visited=${env.NODE_NAME}"
+                        }
+                    }
+                    """).formatted(current.getNodeName()), true));
+
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).get(30, TimeUnit.SECONDS);
+
+            j.assertBuildStatusSuccess(run);
+            String currentVisit = "self-visited=" + current.getNodeName();
+            String otherVisit = "self-visited=" + other.getNodeName();
+            String log = JenkinsRule.getLog(run);
+            assertEquals(1, occurrences(log, currentVisit));
+            assertEquals(1, occurrences(log, otherVisit));
+            assertTrue(log.indexOf(currentVisit) < log.indexOf(otherVisit), log);
         });
     }
 
@@ -166,6 +233,7 @@ class EveryNodeStepTest {
             DumbSlave first = j.createOnlineSlave(Label.get("exact-target"));
             DumbSlave selected = j.createOnlineSlave(Label.get("exact-target"));
             DumbSlave collision = j.createOnlineSlave(Label.get(selected.getNodeName()));
+            WorkflowRun blocker = startBlocker(j, selected, "exact-selected-blocker");
             WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "exact-node");
             job.setDefinition(new CpsFlowDefinition(("""
                     everyNode('exact-target') {
@@ -178,6 +246,8 @@ class EveryNodeStepTest {
             WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
             j.waitForMessage("exact-visited=" + first.getNodeName(), run);
 
+            blocker.doStop();
+            j.waitForCompletion(blocker);
             Computer selectedComputer = requireNonNull(selected.getComputer());
             selectedComputer.disconnect(null).get(30, TimeUnit.SECONDS);
             Thread.sleep(6_000);
@@ -292,6 +362,9 @@ class EveryNodeStepTest {
             boolean completed;
             try {
                 Queue.Item item = waitForNodeQueueTask();
+                ((NodeQueueTask) item.task).reportWaiting();
+                j.assertLogContains("Still waiting to schedule everyNode on '" + node.getNodeName() + "'", run);
+                j.assertLogContains("Waiting for next available executor on", run);
                 assertTrue(Queue.getInstance().cancel(item));
                 completed = waitForCompletion(run);
             } finally {
@@ -327,7 +400,7 @@ class EveryNodeStepTest {
                         """);
 
                 j.assertBuildStatus(Result.FAILURE, run);
-                j.assertLogContains("Jenkins queue refused node '" + RefuseNode.nodeName + "'", run);
+                j.assertLogContains("Jenkins queue refused nodes [" + RefuseNode.nodeName + "]", run);
                 assertTrue(
                         waitForNoNodeQueueTask(run.getParent()),
                         () -> "Queued tasks remain for " + run.getParent().getFullName() + ": "
