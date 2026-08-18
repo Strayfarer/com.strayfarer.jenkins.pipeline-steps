@@ -175,6 +175,25 @@ class EveryNodeStepTest {
     }
 
     @Test
+    void positionalArgumentsSelectParallelMode() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave first = j.createOnlineSlave(Label.get("positional-nodes"));
+            DumbSlave second = j.createOnlineSlave(Label.get("positional-nodes"));
+
+            WorkflowRun run = build(j, """
+                    everyNode('positional-nodes', true) {
+                        echo "positional-visited=${env.NODE_NAME}"
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            String log = JenkinsRule.getLog(run);
+            assertEquals(1, occurrences(log, "positional-visited=" + first.getNodeName()));
+            assertEquals(1, occurrences(log, "positional-visited=" + second.getNodeName()));
+        });
+    }
+
+    @Test
     void noOnlineMatchesFailsClearly() throws Throwable {
         sessions.then(j -> {
             WorkflowRun run = build(j, """

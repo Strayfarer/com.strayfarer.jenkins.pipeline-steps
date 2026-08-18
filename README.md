@@ -169,6 +169,10 @@ its concrete node, matching `executeOnAll`. Parallel execution is explicit:
 everyNode(label: 'unity', parallel: true) {
     echo "Running on ${env.NODE_NAME}"
 }
+
+everyNode('unity', true) {
+    echo "Running on ${env.NODE_NAME}"
+}
 ```
 
 The selection contract is:
