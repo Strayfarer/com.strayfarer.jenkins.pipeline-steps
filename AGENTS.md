@@ -6,19 +6,16 @@ Shared instructions for coding agents. Project-specific information is kept in [
 
 ### Repository conventions
 
-- Follow existing source layout and build system. Do not introduce Gradle,
-  Maven, or another framework for local convenience.
-- In Jenkins Shared Libraries, treat `vars/*.groovy` as global steps. Filename
-  defines public step name; overloaded `call` methods define invocation forms.
-- Keep public APIs small. Prefer a `Map` for programmatic Pipeline configuration
-  and delegated `Closure` where a DSL improves readability.
-- Keep reusable classes outside global-step scripts when they do not need
-  Pipeline script binding. Static state is controller-JVM-wide across builds.
+- Follow the existing source layout and build system. Do not introduce or
+  replace a build framework for local convenience.
 - Put stable user-facing behavior and examples in `README.md`.
+- Keep public Pipeline contracts backward-compatible unless a change explicitly
+  permits a breaking release. Preserve each helper's streamed-output,
+  captured-stdout, or numeric-exit-status contract.
 
 ### Groovy style
 
-Match touched file. Do not normalize unrelated indentation or formatting.
+Match the touched file. Do not normalize unrelated indentation or formatting.
 Opening braces stay on declaration or control-flow lines. Prefer single-quoted
 literals and double-quoted interpolation. Omit semicolons in new code. Use
 camelCase for locals and methods, PascalCase for classes, and uppercase snake
@@ -28,19 +25,16 @@ case for public Pipeline configuration keys and environment variables.
 
 - Do not retain non-serializable Jenkins, Hudson, iterator, matcher, stream, or
   platform objects across Pipeline step calls.
-- Use `@NonCPS` only for pure computation invoking no Pipeline steps.
 - Treat `node`, `stage`, `dir`, `sh`, `powershell`, `withEnv`,
   `withCredentials`, `stash`, and similar calls as suspension points.
 - Do not store build-local state in ordinary static fields.
 - Make scoped behavior lexical, nestable, concurrency-safe, and exception-safe.
-- IDE unresolved-symbol warnings alone do not prove a dynamic global-step error.
 
 ### Errors, interruptions, and results
 
 Preserve `FlowInterruptedException`: set build result when appropriate, then
 rethrow it before broad `Throwable` catches. Do not convert aborts or timeouts
-to ordinary failures. Preserve each helper's streamed-output, captured-stdout,
-or numeric-exit-status contract.
+to ordinary failures.
 
 ### Shells, paths, and external processes
 
@@ -56,30 +50,39 @@ Bind secrets with Jenkins credential steps and minimize scope. Never print
 tokens, passwords, secrets, credential files, or full environments. Preserve
 masking and never archive, stash, or publish credential files.
 
-### Jenkins validation
+### Jenkins environment and validation
 
 Prefer configured Jenkins integration over scraping HTML. Read-only build
 inspection is allowed when relevant. Triggering, replaying, stopping, or
-mutating builds requires explicit authorization. Standalone Groovy cannot
-faithfully reproduce CPS; validate changed call chains, repository tests,
-small safe runtime probes, then an authorized representative Pipeline when
-needed.
+mutating builds requires explicit authorization. Local or standalone execution
+cannot faithfully reproduce every Jenkins CPS, durability, agent, and plugin
+integration behavior. Whenever integration tests are run, watch the complete
+console log; scheduling a build alone does not establish success.
 
-## Jenkins Plugins
+The durable test servers are `Mörkö`, a Linux server that also hosts the
+Jenkins container; `Garl`, a Linux server with a GPU; and `Dende`, a Windows
+server with a GPU. Other Jenkins agents are temporary build helpers: do not
+mention them by name in `.jenkins/Jenkinsfile.groovy`. Target helpers only by
+label, and require an available helper matching a tested label to pass the same
+integration tests as the named servers.
 
+## Jenkins Plugin Development
+
+### Implementation and tests
+
+- Follow the existing Maven and Jenkins plugin structure. Keep Jenkins agent
+  operations on the agent and use the established durable Pipeline mechanisms.
+- Run the local Maven verification described in `README.md` before live
+  integration testing.
 - Keep this plugin's integration tests in `.jenkins/Jenkinsfile.groovy`. The
-  Jenkinsfile must exercise all of the plugin's Pipeline scripts and should
+  Jenkinsfile must exercise all of the plugin's public Pipeline steps and should
   retain assertions for previously discovered regressions.
 - The Jenkins controller runs that file through a job under
-  `https://ci.slothsoft.net/job/jenkins/` whose name matches the Jenkins
-  plugin ID. Watch the full job console log for errors whenever running integration tests; a scheduled
-  build alone does not establish success.
-- The durable test servers are `Mörkö`, a Linux server that also hosts the
-  Jenkins container; `Garl`, a Linux server with a GPU; and `Dende`, a Windows
-  server with a GPU. Other Jenkins agents are temporary build helpers: do not
-  mention them by name in `.jenkins/Jenkinsfile.groovy`. Target helpers only by
-  label, and require an available helper matching a tested label to pass the
-  same integration tests as the named servers.
+  `https://ci.slothsoft.net/job/jenkins/` whose name matches the Jenkins plugin
+  ID.
+
+### Deployment and release
+
 - The deployment target is container `jenkins` on Docker context `groke`.
   Always pass `--context groke`; do not rely on the active Docker context. This
   installation uses `JENKINS_HOME=/jenkins/home`.
@@ -88,7 +91,7 @@ needed.
   verify the plugin version in the installed JPI manifest, and check startup
   logs for plugin-load failures.
 
-A complete release cycle is:
+When release operations are authorized, the complete release cycle is:
 
 1. Implement the features and update `.jenkins/Jenkinsfile.groovy` as needed.
 2. Run the local test suite.
@@ -104,8 +107,7 @@ A complete release cycle is:
 10. After GitHub CI passes, tag the final version and publish its release artifacts.
 11. Download and install the final HPI into `groke` container `jenkins`.
 12. Restart Jenkins after confirming it has no running or queued jobs, verify
-   the final version in the installed JPI manifest, and check startup logs
-   for plugin-load failures.
+   the final version in the installed JPI manifest, and check startup logs for plugin-load failures.
 13. Run this plugin's job in `https://ci.slothsoft.net/job/jenkins/` and watch its complete console log.
 14. If any post-push check or final integration test fails, fix the issue and
     repeat the full cycle from step 1 with a new patch version.
