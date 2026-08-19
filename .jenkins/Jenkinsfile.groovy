@@ -62,6 +62,25 @@ node('server') {
             echo "current-node-visited=${env.NODE_NAME}"
         }
     }
+
+    stage('Current-node conditional allocation') {
+        def currentNode = env.NODE_NAME
+        def currentWorkspace = pwd()
+        def result = nodeIfCurrentDoesNotMatch('server') {
+            assertValue(env.NODE_NAME, currentNode, 'conditional current node')
+            assertValue(pwd(), currentWorkspace, 'conditional current workspace')
+            return 'reused'
+        }
+        assertValue(result, 'reused', 'conditional current-node result')
+    }
+}
+
+stage('Queued conditional allocation') {
+    def result = nodeIfCurrentDoesNotMatch('server') {
+        echo "conditional-node=${env.NODE_NAME}"
+        return 'allocated'
+    }
+    assertValue(result, 'allocated', 'conditional allocated-node result')
 }
 
 stage('Queued everyNode') {

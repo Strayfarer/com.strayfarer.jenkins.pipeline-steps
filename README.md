@@ -15,6 +15,8 @@ The plugin provides the following Pipeline steps:
 - `withEnvFile` applies a dotenv file to a Pipeline body.
 - `everyNode` runs a Pipeline body once on every online node matching a Jenkins
   label expression.
+- `nodeIfCurrentDoesNotMatch` reuses a matching current node or allocates one
+  matching a label expression.
 - `isWindows` checks whether the current Jenkins node runs Windows without
   adding a visible Pipeline step to Stage Logs.
 
@@ -231,6 +233,26 @@ Parallel branches are named after their concrete nodes. A failure in any branch
 fails `everyNode`; interruption is propagated without conversion to an
 ordinary failure.
 
+## Reusing a matching node
+
+`nodeIfCurrentDoesNotMatch` avoids allocating a second executor and workspace
+when the current node already matches the requested label expression:
+
+```groovy
+node('linux') {
+    nodeIfCurrentDoesNotMatch('linux && gpu') {
+        exec './mvnw verify'
+    }
+}
+```
+
+When the current `NODE_NAME` exactly equals the requested expression, or the
+current node matches it as a Jenkins label expression, the body runs immediately
+in the current executor and workspace. Outside a node, or from a nonmatching
+node, the step delegates to Jenkins' native `node(label)` allocation. The step
+logs which path it takes and returns the body's result. Failures and
+interruptions are propagated unchanged.
+
 ## Node operating system
 
 `isWindows()` is the exact boolean inverse of Jenkins' native `isUnix()` and,
@@ -259,6 +281,7 @@ The new names let this plugin coexist with the existing Jenkins Shared Library:
 | `withUnity` execution scope | `insideDockerContainer`   |
 | `withEnvFile`               | `withEnvFile`              |
 | `executeOnAll`              | `everyNode`               |
+| `nodeIfCurrentDoesNotMatch` | `nodeIfCurrentDoesNotMatch` |
 
 The Unity-specific wrapper can remain in the Shared Library:
 
