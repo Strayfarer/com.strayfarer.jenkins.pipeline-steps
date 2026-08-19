@@ -6,6 +6,7 @@ def assertValue(actual, expected, description) {
 
 node('server') {
     stage('Host command steps') {
+        assertValue(isWindows(), !isUnix(), 'isWindows on host')
         exec 'echo host-exec-ok'
         assertValue(execStatus('exit 7'), 7, 'execStatus on host')
         assertValue(execStdout('printf host-stdout-ok'), 'host-stdout-ok', 'execStdout on host')

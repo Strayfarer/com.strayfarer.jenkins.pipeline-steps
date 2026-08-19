@@ -15,6 +15,8 @@ The plugin provides the following Pipeline steps:
 - `withEnvFile` applies a dotenv file to a Pipeline body.
 - `everyNode` runs a Pipeline body once on every online node matching a Jenkins
   label expression.
+- `isWindows` checks whether the current Jenkins node runs Windows without
+  adding a visible Pipeline step to Stage Logs.
 
 The plugin does not own application-specific build orchestration. In
 particular, Unity project and package Pipelines remain in their Shared Library.
@@ -228,6 +230,22 @@ and the branch waits for that node to return. When a branch remains queued,
 Parallel branches are named after their concrete nodes. A failure in any branch
 fails `everyNode`; interruption is propagated without conversion to an
 ordinary failure.
+
+## Node operating system
+
+`isWindows()` is the exact boolean inverse of Jenkins' native `isUnix()` and,
+like `isUnix()`, requires a `node` context:
+
+```groovy
+node {
+    if (isWindows()) {
+        echo 'Running on Windows'
+    }
+}
+```
+
+Unlike a normal Pipeline step, `isWindows()` does not add a node to the
+Pipeline FlowGraph, so the check does not appear in Stage Logs.
 
 ## Shared Library migration
 
