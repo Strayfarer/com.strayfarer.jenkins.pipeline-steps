@@ -66,7 +66,7 @@ node('server') {
     stage('Current-node conditional allocation') {
         def currentNode = env.NODE_NAME
         def currentWorkspace = pwd()
-        def result = nodeIfCurrentDoesNotMatch('server') {
+        def result = steps.nodeIfCurrentDoesNotMatch('server') {
             assertValue(env.NODE_NAME, currentNode, 'conditional current node')
             assertValue(pwd(), currentWorkspace, 'conditional current workspace')
             return 'reused'
@@ -76,7 +76,7 @@ node('server') {
 }
 
 stage('Queued conditional allocation') {
-    def result = nodeIfCurrentDoesNotMatch('server') {
+    def result = steps.nodeIfCurrentDoesNotMatch('server') {
         echo "conditional-node=${env.NODE_NAME}"
         return 'allocated'
     }
