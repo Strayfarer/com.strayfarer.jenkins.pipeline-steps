@@ -89,6 +89,32 @@ class InsideDockerContainerStepTest {
     }
 
     @Test
+    void containerCommandsKeepBookkeepingOutsideTheCurrentDirectory() throws Throwable {
+        sessions.then(j -> {
+            installFakeDocker(j);
+            String command = Functions.isWindows()
+                    ? "if (Get-ChildItem -Force -Filter '.pipeline-*') { Write-Output 'polluted' } else { Write-Output 'clean' }"
+                    : "if find . -maxdepth 1 -name '.pipeline-*' -print -quit | grep -q .; then echo polluted; else echo clean; fi";
+            WorkflowRun run = build(j, """
+                    node {
+                        dir('repository') {
+                            withEnv(["WORKSPACE_TMP=${pwd()}/missing-temp"]) {
+                                insideDockerContainer('bookkeeping') {
+                                    def value = execStdout "%s"
+                                    echo "container-bookkeeping=${value}"
+                                }
+                            }
+                        }
+                    }
+                    """.formatted(command));
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("container-bookkeeping=clean", run);
+            j.assertLogNotContains("container-bookkeeping=polluted", run);
+        });
+    }
+
+    @Test
     void environmentAllowlistIsNormalizedAndValuesStayOutOfArguments() throws Throwable {
         sessions.then(j -> {
             Path log = installFakeDocker(j);

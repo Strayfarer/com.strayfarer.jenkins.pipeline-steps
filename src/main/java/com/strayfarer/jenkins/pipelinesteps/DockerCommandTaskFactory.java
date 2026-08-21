@@ -26,8 +26,10 @@ final class DockerCommandTaskFactory {
             boolean captureStdout)
             throws IOException, InterruptedException {
         String token = "pipeline-exec-" + UUID.randomUUID();
-        String pidFile = ".pipeline-docker-pid-" + UUID.randomUUID();
-        String containerPidFile = containerPath(workspace.getRemote(), pidFile, docker.os());
+        String pidFileName = ".pipeline-docker-pid-" + UUID.randomUUID();
+        FilePath temporaryDirectory = WorkspaceTemporaryFiles.directory(workspace);
+        String pidFile = temporaryDirectory.child(pidFileName).getRemote();
+        String containerPidFile = containerPath(temporaryDirectory.getRemote(), pidFileName, docker.os());
 
         List<String> arguments = new ArrayList<>();
         arguments.add("docker");
@@ -64,7 +66,8 @@ final class DockerCommandTaskFactory {
         String hostScript = launcher.isUnix()
                 ? "exec " + joinPosix(arguments)
                 : "& " + joinPowerShell(arguments) + "\r\nexit $LASTEXITCODE";
-        DurableTask hostTask = CommandTaskFactory.nativeTask(hostScript, launcher, environment, captureStdout);
+        DurableTask hostTask =
+                CommandTaskFactory.nativeTask(hostScript, workspace, launcher, environment, captureStdout);
         return new DockerProcessDurableTask(
                 hostTask, docker.container(), docker.os(), pidFile, containerPidFile, token);
     }

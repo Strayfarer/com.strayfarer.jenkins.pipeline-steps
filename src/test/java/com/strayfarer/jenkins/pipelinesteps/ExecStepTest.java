@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Result;
 import java.util.Set;
@@ -189,11 +190,12 @@ class ExecStepTest {
     void selectsTheNativeShellWithoutShellTracing() {
         ExecStep step = new ExecStep("echo hello");
 
-        DurableTask unixTask = CommandTaskFactory.task(step.getScript(), true, null, false);
+        FilePath workspace = new FilePath(new java.io.File("workspace"));
+        DurableTask unixTask = CommandTaskFactory.task(step.getScript(), workspace, true, null, false);
         BourneShellScript unixShell = assertInstanceOf(BourneShellScript.class, unixTask);
         assertEquals("#!/bin/sh\necho hello", unixShell.getScript());
 
-        DurableTask windowsTask = CommandTaskFactory.task(step.getScript(), false, "pwsh", false);
+        DurableTask windowsTask = CommandTaskFactory.task(step.getScript(), workspace, false, "pwsh", false);
         PowershellScript windowsShell = assertInstanceOf(PowershellScript.class, windowsTask);
         assertEquals("pwsh", windowsShell.getPowershellBinary());
         assertEquals("echo hello", windowsShell.getScript());

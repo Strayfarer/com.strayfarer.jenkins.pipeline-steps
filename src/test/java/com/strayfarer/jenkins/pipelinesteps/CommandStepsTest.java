@@ -74,6 +74,29 @@ class CommandStepsTest {
     }
 
     @Test
+    void execStdoutKeepsBookkeepingOutsideTheCurrentDirectoryAndIgnoresStaleWorkspaceTmp() throws Throwable {
+        sessions.then(j -> {
+            String command = nativeCommand(
+                    "if (Get-ChildItem -Force -Filter '.pipeline-*') { Write-Output 'polluted' } else { Write-Output 'clean' }",
+                    "if find . -maxdepth 1 -name '.pipeline-*' -print -quit | grep -q .; then echo polluted; else echo clean; fi");
+            WorkflowRun run = build(j, """
+                    node {
+                        dir('repository') {
+                            withEnv(["WORKSPACE_TMP=${pwd()}/missing-temp"]) {
+                                def value = execStdout "%s"
+                                echo "workspace-bookkeeping=${value}"
+                            }
+                        }
+                    }
+                    """.formatted(command));
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("workspace-bookkeeping=clean", run);
+            j.assertLogNotContains("workspace-bookkeeping=polluted", run);
+        });
+    }
+
+    @Test
     void execStdoutCaptureSurvivesAControllerRestart() throws Throwable {
         sessions.then(j -> {
             String command = nativeCommand(

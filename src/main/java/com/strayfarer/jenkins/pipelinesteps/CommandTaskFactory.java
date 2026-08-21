@@ -1,6 +1,7 @@
 package com.strayfarer.jenkins.pipelinesteps;
 
 import hudson.EnvVars;
+import hudson.FilePath;
 import hudson.Launcher;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -15,10 +16,11 @@ final class CommandTaskFactory {
 
     private CommandTaskFactory() {}
 
-    static DurableTask nativeTask(String script, Launcher launcher, EnvVars environment, boolean teeStdout)
+    static DurableTask nativeTask(
+            String script, FilePath workspace, Launcher launcher, EnvVars environment, boolean teeStdout)
             throws InterruptedException {
         if (launcher.isUnix()) {
-            return task(script, true, null, teeStdout);
+            return task(script, workspace, true, null, teeStdout);
         }
         boolean pwshAvailable;
         try {
@@ -27,23 +29,35 @@ final class CommandTaskFactory {
             pwshAvailable = false;
         }
         String shell = pwshAvailable ? "pwsh" : "powershell";
-        return task(script, false, shell, teeStdout);
+        return task(script, workspace, false, shell, teeStdout);
     }
 
-    static DurableTask task(String script, boolean unix, String windowsShell, boolean teeStdout) {
-        String captureFile = ".pipeline-exec-stdout-" + UUID.randomUUID();
+    static DurableTask task(String script, FilePath workspace, boolean unix, String windowsShell, boolean teeStdout) {
+        if (!teeStdout) {
+            if (unix) {
+                return new BourneShellScript("#!/bin/sh\n" + script);
+            }
+            PowershellScript powershellScript = new PowershellScript(script);
+            powershellScript.setPowershellBinary(windowsShell);
+            return powershellScript;
+        }
+
+        FilePath temporaryDirectory = WorkspaceTemporaryFiles.directory(workspace);
+        String captureFile = temporaryDirectory
+                .child(".pipeline-exec-stdout-" + UUID.randomUUID())
+                .getRemote();
         DurableTask task;
         if (unix) {
-            task = new BourneShellScript(teeStdout ? teeUnixStdout(script, captureFile) : "#!/bin/sh\n" + script);
+            String statusFile = temporaryDirectory
+                    .child(".pipeline-exec-status-" + UUID.randomUUID())
+                    .getRemote();
+            task = new BourneShellScript(teeUnixStdout(script, captureFile, statusFile));
         } else {
-            PowershellScript powershellScript =
-                    new PowershellScript(teeStdout ? teePowerShellStdout(script, captureFile) : script);
+            PowershellScript powershellScript = new PowershellScript(teePowerShellStdout(script, captureFile));
             powershellScript.setPowershellBinary(windowsShell);
             task = powershellScript;
         }
-        return teeStdout
-                ? new CapturedOutputDurableTask(task, captureFile, unix ? null : StandardCharsets.UTF_8)
-                : task;
+        return new CapturedOutputDurableTask(task, captureFile, unix ? null : StandardCharsets.UTF_8);
     }
 
     static String selectWindowsShell(Predicate<String> available) {
@@ -61,10 +75,12 @@ final class CommandTaskFactory {
                 == 0;
     }
 
-    private static String teeUnixStdout(String script, String captureFile) {
+    private static String teeUnixStdout(String script, String captureFile, String statusFile) {
         String delimiter = heredocDelimiter(script);
         return "#!/bin/sh\n"
-                + "status_file=\"${WORKSPACE_TMP:-.}/.pipeline-exec-status-$$\"\n"
+                + "status_file="
+                + quotePosix(statusFile)
+                + "\n"
                 + "trap 'rm -f \"$status_file\"' EXIT HUP INT TERM\n"
                 + "{\n"
                 + "/bin/sh <<'"
@@ -75,18 +91,18 @@ final class CommandTaskFactory {
                 + delimiter
                 + "\n"
                 + "printf '%s\\n' \"$?\" > \"$status_file\"\n"
-                + "} | tee '"
-                + captureFile
-                + "'\n"
+                + "} | tee "
+                + quotePosix(captureFile)
+                + "\n"
                 + "status=$(cat \"$status_file\")\n"
                 + "exit \"$status\"\n";
     }
 
     private static String teePowerShellStdout(String script, String captureFile) {
         return "$pipelineEncoding = [Text.UTF8Encoding]::new($false)\r\n"
-                + "$pipelineWriter = [IO.StreamWriter]::new([IO.Path]::GetFullPath('"
-                + captureFile
-                + "'), $false, $pipelineEncoding)\r\n"
+                + "$pipelineWriter = [IO.StreamWriter]::new("
+                + quotePowerShell(captureFile)
+                + ", $false, $pipelineEncoding)\r\n"
                 + "$pipelineWriter.AutoFlush = $true\r\n"
                 + "try {\r\n"
                 + "& {\r\n"
@@ -109,5 +125,13 @@ final class CommandTaskFactory {
             delimiter = "PIPELINE_EXEC_" + UUID.randomUUID().toString().replace("-", "");
         } while (script.contains(delimiter));
         return delimiter;
+    }
+
+    private static String quotePosix(String value) {
+        return "'" + value.replace("'", "'\"'\"'") + "'";
+    }
+
+    private static String quotePowerShell(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 }

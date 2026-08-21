@@ -78,6 +78,11 @@ must not discard a running process, its output, or its final status. Aborting
 the Pipeline must terminate the selected host or container process and preserve
 Jenkins interruption semantics.
 
+Command bookkeeping is stored under the Jenkins temporary directory associated
+with the current `pwd()`. The steps do not create bookkeeping files in the
+working directory and do not rely on a possibly stale `WORKSPACE_TMP` value
+after entering `dir(...)`.
+
 ## Docker sidecars
 
 `insideDockerContainer` selects an existing Docker container for nested

@@ -77,7 +77,8 @@ public final class InsideDockerContainerStep extends Step {
                 : "$output = & docker inspect --type container --format '{{.Id}} {{.State.Running}} {{.Platform}}' -- $env:"
                         + INSPECT_CONTAINER
                         + "\r\n$status = $LASTEXITCODE\r\nWrite-Output $status\r\n$output\r\nexit 0";
-        DurableTask task = CommandTaskFactory.nativeTask(inspectionScript, launcher, context.get(EnvVars.class), false);
+        DurableTask task = CommandTaskFactory.nativeTask(
+                inspectionScript, context.get(FilePath.class), launcher, context.get(EnvVars.class), false);
         task = new EnvironmentOverlayDurableTask(task, Map.of(INSPECT_CONTAINER, container));
         DurableTaskStepAdapter taskStep = new DurableTaskStepAdapter(task);
         taskStep.setEncoding("UTF-8");

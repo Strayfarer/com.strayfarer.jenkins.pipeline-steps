@@ -64,13 +64,14 @@ abstract class AbstractCommandStep extends Step {
         }
 
         ResultMode mode = resultMode();
+        FilePath workspace = context.get(FilePath.class);
         Launcher launcher = context.get(Launcher.class);
         EnvVars environment = context.get(EnvVars.class);
         DockerContext docker = context.get(DockerContext.class);
         DurableTask task = docker == null
-                ? CommandTaskFactory.nativeTask(script, launcher, environment, mode == ResultMode.STDOUT)
+                ? CommandTaskFactory.nativeTask(script, workspace, launcher, environment, mode == ResultMode.STDOUT)
                 : DockerCommandTaskFactory.task(
-                        docker, script, context.get(FilePath.class), launcher, environment, mode == ResultMode.STDOUT);
+                        docker, script, workspace, launcher, environment, mode == ResultMode.STDOUT);
         DurableTaskStepAdapter taskStep = new DurableTaskStepAdapter(task);
         taskStep.setEncoding(encoding);
         taskStep.setReturnStatus(mode == ResultMode.STATUS);

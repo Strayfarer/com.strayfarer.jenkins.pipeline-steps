@@ -57,6 +57,9 @@ if ($command -eq 'pwsh') {
             }
         }
     }
+    if (-not (Get-Command pwsh -ErrorAction SilentlyContinue)) {
+        $command = 'powershell'
+    }
 }
 & $command @commandArguments
 exit $LASTEXITCODE

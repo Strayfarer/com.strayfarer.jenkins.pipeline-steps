@@ -67,6 +67,8 @@ final class DockerProcessDurableTask extends DurableTask {
     @Override
     public Controller launch(EnvVars environment, FilePath workspace, Launcher launcher, TaskListener listener)
             throws IOException, InterruptedException {
+        FilePath hostPidFile = WorkspaceTemporaryFiles.resolve(workspace, pidFile);
+        WorkspaceTemporaryFiles.prepare(hostPidFile);
         EnvVars dockerEnvironment = new EnvVars();
         for (String name : DOCKER_ENVIRONMENT) {
             if (environment.containsKey(name)) {
@@ -153,7 +155,7 @@ final class DockerProcessDurableTask extends DurableTask {
             try {
                 delegate.cleanup(workspace);
             } finally {
-                workspace.child(pidFile).delete();
+                WorkspaceTemporaryFiles.resolve(workspace, pidFile).delete();
             }
         }
 

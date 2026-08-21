@@ -12,6 +12,15 @@ node('server') {
         assertValue(execStdout('printf host-stdout-ok'), 'host-stdout-ok', 'execStdout on host')
     }
 
+    stage('Command bookkeeping') {
+        dir('bookkeeping-repository') {
+            withEnv(["WORKSPACE_TMP=${pwd()}/missing-temp"]) {
+                def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
+                assertValue(files, '', 'host command bookkeeping outside current directory')
+            }
+        }
+    }
+
     stage('Dotenv scope') {
         writeFile file: 'pipeline.env', text: 'DOTENV_CRLF=parsed\r\nDOTENV_EMPTY=\r\nDOTENV_QUOTED="value # retained" # comment\r\n'
         writeFile file: 'pipeline-empty.env', text: ''
@@ -50,6 +59,8 @@ node('server') {
         stage('Container execStdout') {
             insideDockerContainer('agents_compose-unity') {
                 assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
+                assertValue(files, '', 'container command bookkeeping outside current directory')
             }
         }
     }

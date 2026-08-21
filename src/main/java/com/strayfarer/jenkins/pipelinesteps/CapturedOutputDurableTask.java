@@ -55,7 +55,8 @@ final class CapturedOutputDurableTask extends DurableTask {
     @Override
     public Controller launch(EnvVars environment, FilePath workspace, Launcher launcher, TaskListener listener)
             throws IOException, InterruptedException {
-        workspace.child(captureFile).delete();
+        FilePath output = WorkspaceTemporaryFiles.resolve(workspace, captureFile);
+        WorkspaceTemporaryFiles.prepare(output);
         String outputCharset = fixedCaptureCharset == null ? captureCharset : fixedCaptureCharset;
         return new CapturedOutputController(
                 delegate.launch(environment, workspace, launcher, listener), captureFile, outputCharset);
@@ -90,7 +91,7 @@ final class CapturedOutputDurableTask extends DurableTask {
         @Override
         public @NonNull byte[] getOutput(@NonNull FilePath workspace, @NonNull Launcher launcher)
                 throws IOException, InterruptedException {
-            FilePath output = workspace.child(captureFile);
+            FilePath output = WorkspaceTemporaryFiles.resolve(workspace, captureFile);
             if (!output.exists()) {
                 return new byte[0];
             }
@@ -107,7 +108,7 @@ final class CapturedOutputDurableTask extends DurableTask {
             try {
                 delegate.cleanup(workspace);
             } finally {
-                workspace.child(captureFile).delete();
+                WorkspaceTemporaryFiles.resolve(workspace, captureFile).delete();
             }
         }
 
