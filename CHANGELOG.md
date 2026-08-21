@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## 0.5.1 - 2026-08-21
+
+- Store `execStdout` capture and status files and Docker command PID files in
+  the temporary directory associated with the current workspace, preventing
+  command bookkeeping from appearing in working-directory output and avoiding
+  stale `WORKSPACE_TMP` paths after `dir(...)`.
+
 ## 0.5.0 - 2026-08-19
 
 - Add `nodeIfCurrentDoesNotMatch`, which reuses a matching current Jenkins node
