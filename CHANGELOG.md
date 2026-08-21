@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.5.1 - 2026-08-21
 
+### Fixed
+
 - Store `execStdout` capture and status files and Docker command PID files in
   the temporary directory associated with the current workspace, preventing
   command bookkeeping from appearing in working-directory output and avoiding
@@ -17,12 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.5.0 - 2026-08-19
 
+### Added
+
 - Add `nodeIfCurrentDoesNotMatch`, which reuses a matching current Jenkins node
   and otherwise performs a native `node(label)` allocation.
 - Add `isWindows`, an invisible boolean inverse of Jenkins' native `isUnix`
   check.
 
 ## 0.4.0 - 2026-08-19
+
+### Added
 
 - Add `withEnvFile`, which parses a workspace dotenv file and applies its
   variables to a Pipeline body with lexical, nestable restoration.
@@ -33,37 +39,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## 0.3.1 - 2026-08-18
 
+### Fixed
+
 - Isolate parallel `everyNode` CPS branches so each node has independent body
   state and durable steps abort cleanly without writing to completed branches.
 
 ## 0.3.0 - 2026-08-18
+
+### Changed
 
 - Run each `everyNode` body inside a real Jenkins `stage(env.NODE_NAME)` step so
   node-named stages behave correctly in Pipeline visualizations.
 
 ## 0.2.0 - 2026-08-18
 
+### Added
+
 - Add positional `everyNode(label, parallel)` arguments while retaining the
   existing named-argument form.
 
 ## 0.1.3 - 2026-08-18
+
+### Fixed
 
 - Preserve Linux container command exit statuses by waiting for the process
   launched through `setsid`.
 
 ## 0.1.2 - 2026-08-18
 
+### Changed
+
 - Display each `everyNode` body invocation as a Jenkins stage named after its
   concrete node.
 
 ## 0.1.1 - 2026-08-18
 
+### Added
+
 - Allow `everyNode` to omit its label and snapshot all online nodes.
+
+### Changed
+
 - Reuse a matching current node and let Jenkins select the next available node
   from the remaining sequential targets.
+
+### Fixed
+
 - Correct Linux and Windows Docker container platform detection.
 
 ## 0.1.0 - 2026-08-17
+
+### Added
 
 - Add durable `exec`, `execStatus`, and `execStdout` Pipeline steps for native
   Linux and Windows command execution.
