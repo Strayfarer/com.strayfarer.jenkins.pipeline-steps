@@ -123,3 +123,32 @@ stage('All-node everyNode') {
         echo "all-node-visited=${env.NODE_NAME}"
     }
 }
+
+pipeline {
+    agent  {
+        label 'server'
+    }
+    stages {
+        stage('Pipeline Tests') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    insideDockerContainer('agents_compose-unity') {
+                        exec 'echo container-exec-ok'
+                    }
+                }
+
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    insideDockerContainer('agents_compose-unity') {
+                        assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+                    }
+                }
+
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    insideDockerContainer('agents_compose-unity') {
+                        assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                    }
+                }
+            }
+        }
+    }
+}
