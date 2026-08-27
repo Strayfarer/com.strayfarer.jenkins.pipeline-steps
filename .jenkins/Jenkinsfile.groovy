@@ -7,7 +7,7 @@ def assertValue(actual, expected, description) {
 def testNodes = ['windows && server', 'linux && server'];
 
 for(def testNode in testNodes) {
-stage("Agent: {testNode}") {
+stage("Agent: ${testNode}") {
 
 node(testNode) {
     stage('Host command steps') {
