@@ -4,7 +4,7 @@ def assertValue(actual, expected, description) {
     }
 }
 
-node('server') {
+node('server && windows') {
     stage('Host command steps') {
         assertValue(isWindows(), !isUnix(), 'isWindows on host')
         exec 'echo host-exec-ok'
