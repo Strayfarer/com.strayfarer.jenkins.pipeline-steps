@@ -14,7 +14,7 @@ node(testNode) {
         assertValue(isWindows(), !isUnix(), 'isWindows on host')
         exec 'echo host-exec-ok'
         assertValue(execStatus('exit 7'), 7, 'execStatus on host')
-        assertValue(execStdout('printf host-stdout-ok'), 'host-stdout-ok', 'execStdout on host')
+        assertValue(execStdout('echo host-stdout-ok'), 'host-stdout-ok', 'execStdout on host')
     }
 
     stage('Command bookkeeping') {
@@ -65,7 +65,7 @@ node(testNode) {
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
         stage('docker.image.inside  execStdout') {
             docker.image(testImage).inside {
-                assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                 def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
                 assertValue(files, '', 'container command bookkeeping outside current directory')
             }
@@ -91,7 +91,7 @@ node(testNode) {
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
         stage('insideDockerContainer execStdout') {
             insideDockerContainer('agents_compose-unity') {
-                assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                 def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
                 assertValue(files, '', 'container command bookkeeping outside current directory')
             }
@@ -118,7 +118,39 @@ node(testNode) {
         assertValue(result, 'reused', 'conditional current-node result')
     }
 }
-}}
+}
+
+
+
+pipeline {
+    agent  {
+        label testNode
+    }
+    stages {
+        stage('Pipeline Tests') {
+            steps {
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    insideDockerContainer('agents_compose-unity') {
+                        exec 'echo container-exec-ok'
+                    }
+                }
+
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    insideDockerContainer('agents_compose-unity') {
+                        assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+                    }
+                }
+
+                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                    insideDockerContainer('agents_compose-unity') {
+                        assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                    }
+                }
+            }
+        }
+    }
+}
+}
 
 stage('Queued conditional allocation') {
     def result = steps.nodeIfCurrentDoesNotMatch('server') {
@@ -155,34 +187,5 @@ stage('All-node everyNode') {
     everyNode {
         assertValue(env.STAGE_NAME, env.NODE_NAME, 'all-node everyNode stage')
         echo "all-node-visited=${env.NODE_NAME}"
-    }
-}
-
-pipeline {
-    agent  {
-        label 'server'
-    }
-    stages {
-        stage('Pipeline Tests') {
-            steps {
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer('agents_compose-unity') {
-                        exec 'echo container-exec-ok'
-                    }
-                }
-
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer('agents_compose-unity') {
-                        assertValue(execStatus('exit 9'), 9, 'execStatus in container')
-                    }
-                }
-
-                catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer('agents_compose-unity') {
-                        assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
-                    }
-                }
-            }
-        }
     }
 }
