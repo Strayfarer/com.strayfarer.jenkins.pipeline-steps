@@ -4,7 +4,12 @@ def assertValue(actual, expected, description) {
     }
 }
 
-node('server && windows') {
+def testNodes = ['windows && server', 'linux && server'];
+
+for(def testNode in testNodes) {
+stage("Agent: {testNode}") {
+
+node(testNode) {
     stage('Host command steps') {
         assertValue(isWindows(), !isUnix(), 'isWindows on host')
         exec 'echo host-exec-ok'
@@ -39,9 +44,11 @@ node('server && windows') {
         }
     }
 
+    def testImage = isUnix() ? 'alpine:latest' : 'mcr.microsoft.com/windows/nanoserver:1809';
+
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
         stage('docker.image.inside exec') {
-            docker.image('mcr.microsoft.com/windows/nanoserver:1809').inside {
+            docker.image(testImage).inside {
                 exec 'echo container-exec-ok'
             }
         }
@@ -49,7 +56,7 @@ node('server && windows') {
 
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
         stage('docker.image.inside execStatus') {
-            docker.image('mcr.microsoft.com/windows/nanoserver:1809').inside {
+            docker.image(testImage).inside {
                 assertValue(execStatus('exit 9'), 9, 'execStatus in container')
             }
         }
@@ -57,7 +64,7 @@ node('server && windows') {
 
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
         stage('docker.image.inside  execStdout') {
-            docker.image('mcr.microsoft.com/windows/nanoserver:1809').inside {
+            docker.image(testImage).inside {
                 assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                 def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
                 assertValue(files, '', 'container command bookkeeping outside current directory')
@@ -111,6 +118,7 @@ node('server && windows') {
         assertValue(result, 'reused', 'conditional current-node result')
     }
 }
+}}
 
 stage('Queued conditional allocation') {
     def result = steps.nodeIfCurrentDoesNotMatch('server') {
