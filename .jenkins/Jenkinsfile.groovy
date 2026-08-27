@@ -40,7 +40,33 @@ node('server') {
     }
 
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-        stage('Container exec') {
+        stage('docker.image.inside exec') {
+            docker.image('mcr.microsoft.com/windows/nanoserver:1809').inside {
+                exec 'echo container-exec-ok'
+            }
+        }
+    }
+
+    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        stage('docker.image.inside execStatus') {
+            docker.image('mcr.microsoft.com/windows/nanoserver:1809').inside {
+                assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+            }
+        }
+    }
+
+    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        stage('docker.image.inside  execStdout') {
+            docker.image('mcr.microsoft.com/windows/nanoserver:1809').inside {
+                assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
+                assertValue(files, '', 'container command bookkeeping outside current directory')
+            }
+        }
+    }
+
+    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+        stage('insideDockerContainer exec') {
             insideDockerContainer('agents_compose-unity') {
                 exec 'echo container-exec-ok'
             }
@@ -48,7 +74,7 @@ node('server') {
     }
 
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-        stage('Container execStatus') {
+        stage('insideDockerContainer execStatus') {
             insideDockerContainer('agents_compose-unity') {
                 assertValue(execStatus('exit 9'), 9, 'execStatus in container')
             }
@@ -56,7 +82,7 @@ node('server') {
     }
 
     catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-        stage('Container execStdout') {
+        stage('insideDockerContainer execStdout') {
             insideDockerContainer('agents_compose-unity') {
                 assertValue(execStdout('printf container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                 def files = execStdout "find . -maxdepth 1 -name '.pipeline-*' -print"
