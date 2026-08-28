@@ -4,6 +4,9 @@
 # Changelog
 # =========
 #
+## [1.5.0] - 2026-08-28
+# - Java and Groovy support
+#
 ## [1.4.0] - 2026-08-17
 # - Java support
 #
@@ -568,3 +571,24 @@ dotnet_diagnostic.UNT0033.severity = warning
 
 # @UNT0004+UNT0005: https://docs.unity3d.com/ScriptReference/Time-fixedDeltaTime.html
 # @UNT0007+UNT0008: https://stackoverflow.com/questions/58487442/why-does-resharper-not-suggest-using-null-propagation-for-both-of-these-blocks
+
+# Groovy-Dateien
+[*.groovy]
+
+#### JetBrains / IntelliJ IDEA ####
+
+ij_continuation_indent_size = 4
+ij_any_keep_indents_on_empty_lines = false
+ij_groovy_brace_style = end_of_line
+ij_groovy_class_brace_style = end_of_line
+ij_groovy_method_brace_style = end_of_line
+ij_groovy_keep_line_breaks = true
+ij_groovy_align_multiline_list_or_map = false
+ij_groovy_align_named_args_in_map = false
+ij_groovy_space_before_closure_lbrace = true
+ij_groovy_space_in_named_argument_before_colon = false
+ij_groovy_space_in_named_argument = true
+ij_groovy_space_within_list_or_map = false
+ij_groovy_space_within_gstring_injection_braces = false
+ij_groovy_wrap_chain_calls_after_dot = false
+ij_groovy_use_flying_geese_braces = false
