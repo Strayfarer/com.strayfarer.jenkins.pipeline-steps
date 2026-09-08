@@ -86,8 +86,14 @@ integration tests as the named servers.
 - The deployment target is container `jenkins` on Docker context `groke`.
   Always pass `--context groke`; do not rely on the active Docker context. This
   installation uses `JENKINS_HOME=/jenkins/home`.
-- Restart Jenkins only when it has no active builds or other running jobs.
-  Queued jobs do not block a restart; Jenkins preserves them across restart.
+- Before restarting, put Jenkins in quiet mode so no new builds start, then wait
+  for all executor-running builds to finish. Do not rely on safe restart alone:
+  Jenkins may consider a Pipeline restart-safe while it is still running, and a
+  non-resumable Pipeline can then fail during restart. Do not abort or ignore
+  running jobs to make a restart happen sooner.
+- Queue items and Pipeline builds waiting for an executor are queued work, not
+  running jobs. They do not block a restart, and Jenkins preserves them across
+  restart.
   After restarting, wait for the container log to report
   `Jenkins is fully up and running`, verify the plugin version in the installed
   JPI manifest, and check startup logs for plugin-load failures.
