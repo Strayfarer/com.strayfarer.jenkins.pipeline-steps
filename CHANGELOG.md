@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## 0.6.0 - 2026-09-08
+
+### Added
+
+- Add an independent `failFast` option to `everyNode` as a named argument or
+  third positional argument. It defaults to `false` for both sequential and
+  parallel execution, allowing unaffected nodes to finish when another node
+  fails.
+
+
 ## 0.5.1 - 2026-08-21
 
 ### Fixed
