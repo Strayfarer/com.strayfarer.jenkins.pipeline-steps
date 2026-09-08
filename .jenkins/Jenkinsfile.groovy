@@ -4,6 +4,15 @@ def assertValue(actual, expected, description) {
     }
 }
 
+def composeUnityContainer() {
+    def containers = execStdout('docker ps --filter label=net.slothsoft.role=compose-unity --format "{{.ID}}"')
+    def containerIds = containers.readLines()
+    if (containerIds.size() != 1) {
+        error "Expected exactly one local compose-unity container, found ${containerIds.size()}"
+    }
+    return containerIds[0]
+}
+
 def testNodes = ['windows && server', 'linux && server']
 for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
     def testNode = testNodes[testIndex]
@@ -78,7 +87,7 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('insideDockerContainer exec') {
-                    insideDockerContainer('agents_compose-unity') {
+                    insideDockerContainer(composeUnityContainer()) {
                         exec 'echo container-exec-ok'
                     }
                 }
@@ -86,7 +95,7 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('insideDockerContainer execStatus') {
-                    insideDockerContainer('agents_compose-unity') {
+                    insideDockerContainer(composeUnityContainer()) {
                         assertValue(execStatus('exit 9'), 9, 'execStatus in container')
                     }
                 }
@@ -94,7 +103,7 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('insideDockerContainer execStdout') {
-                    insideDockerContainer('agents_compose-unity') {
+                    insideDockerContainer(composeUnityContainer()) {
                         assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                         def files = execStdout bookkeepingCommand
                         assertValue(files, '', 'container command bookkeeping outside current directory')
@@ -171,19 +180,19 @@ pipeline {
         stage('Declarative Pipeline compatibility') {
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer('agents_compose-unity') {
+                    insideDockerContainer(composeUnityContainer()) {
                         exec 'echo container-exec-ok'
                     }
                 }
 
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer('agents_compose-unity') {
+                    insideDockerContainer(composeUnityContainer()) {
                         assertValue(execStatus('exit 9'), 9, 'execStatus in container')
                     }
                 }
 
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer('agents_compose-unity') {
+                    insideDockerContainer(composeUnityContainer()) {
                         assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                     }
                 }
