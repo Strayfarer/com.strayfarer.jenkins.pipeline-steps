@@ -108,6 +108,10 @@ final class NodeQueueTask implements ContinuedTask, Serializable, AccessControll
         return selectedNodeName == null ? String.join(" || ", nodeNames) : selectedNodeName;
     }
 
+    String getSelectedNodeName() {
+        return selectedNodeName;
+    }
+
     @Override
     public String getDisplayName() {
         return "everyNode on " + getName();

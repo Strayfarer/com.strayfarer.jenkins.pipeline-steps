@@ -64,6 +64,15 @@ public final class EveryNodeGlobalVariable extends GlobalVariable {
         }
 
         @Whitelisted
+        public Object call(Object label, boolean parallel, boolean failFast, Closure<?> body) throws AbortException {
+            Map<String, Object> arguments = new LinkedHashMap<>();
+            arguments.put("label", label);
+            arguments.put("parallel", parallel);
+            arguments.put("failFast", failFast);
+            return invoke(arguments, body);
+        }
+
+        @Whitelisted
         public Object call(Map<?, ?> arguments, Closure<?> body) throws AbortException {
             return invoke(arguments, body);
         }

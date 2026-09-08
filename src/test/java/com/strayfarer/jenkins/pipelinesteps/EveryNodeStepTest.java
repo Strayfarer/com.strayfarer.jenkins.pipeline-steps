@@ -212,19 +212,118 @@ class EveryNodeStepTest {
     }
 
     @Test
-    void branchFailureFailsTheStep() throws Throwable {
+    void sequentialFailureContinuesByDefault() throws Throwable {
         sessions.then(j -> {
-            j.createOnlineSlave(Label.get("failure-nodes"));
-            j.createOnlineSlave(Label.get("failure-nodes"));
-
-            WorkflowRun run = build(j, """
-                    everyNode(label: 'failure-nodes', parallel: true) {
-                        error "branch-failed-${env.NODE_NAME}"
+            DumbSlave failing = j.createOnlineSlave(Label.get("sequential-default-failure"));
+            DumbSlave survivor = j.createOnlineSlave(Label.get("sequential-default-failure"));
+            WorkflowRun blocker = startBlocker(j, survivor, "sequential-default-failure-blocker");
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "sequential-default-failure");
+            job.setDefinition(new CpsFlowDefinition("""
+                    everyNode(label: 'sequential-default-failure', parallel: false) {
+                        if (env.NODE_NAME == '%s') {
+                            echo 'sequential-default-failure-started'
+                            error 'expected sequential failure'
+                        }
+                        echo "sequential-default-survived=${env.NODE_NAME}"
                     }
-                    """);
+                    """.formatted(failing.getNodeName()), true));
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
+
+            try {
+                j.waitForMessage("sequential-default-failure-started", run);
+                blocker.doStop();
+                j.waitForCompletion(blocker);
+
+                j.assertBuildStatus(Result.FAILURE, j.waitForCompletion(run));
+                j.assertLogContains("expected sequential failure", run);
+                j.assertLogContains("sequential-default-survived=" + survivor.getNodeName(), run);
+            } finally {
+                if (run.isBuilding()) {
+                    run.doStop();
+                    j.waitForCompletion(run);
+                }
+                if (blocker.isBuilding()) {
+                    blocker.doStop();
+                    j.waitForCompletion(blocker);
+                }
+            }
+        });
+    }
+
+    @Test
+    void sequentialFailFastStopsRemainingNodes() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave failing = j.createOnlineSlave(Label.get("sequential-fast-failure"));
+            DumbSlave skipped = j.createOnlineSlave(Label.get("sequential-fast-failure"));
+            WorkflowRun blocker = startBlocker(j, skipped, "sequential-fast-failure-blocker");
+
+            try {
+                WorkflowRun run = build(j, ("""
+                        everyNode(label: 'sequential-fast-failure', parallel: false, failFast: true) {
+                            if (env.NODE_NAME == '%s') {
+                                error 'expected sequential fail-fast failure'
+                            }
+                            echo "sequential-fast-must-not-run=${env.NODE_NAME}"
+                        }
+                        """).formatted(failing.getNodeName()));
+
+                j.assertBuildStatus(Result.FAILURE, run);
+                j.assertLogContains("expected sequential fail-fast failure", run);
+                j.assertLogNotContains("sequential-fast-must-not-run=" + skipped.getNodeName(), run);
+            } finally {
+                blocker.doStop();
+                j.waitForCompletion(blocker);
+            }
+        });
+    }
+
+    @Test
+    void parallelFailureWaitsForOtherBranchesByDefault() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave failing = j.createOnlineSlave(Label.get("parallel-default-failure"));
+            DumbSlave survivor = j.createOnlineSlave(Label.get("parallel-default-failure"));
+
+            WorkflowRun run = build(j, ("""
+                    everyNode(label: 'parallel-default-failure', parallel: true) {
+                        if (env.NODE_NAME == '%s') {
+                            sleep 2
+                            error 'expected parallel failure'
+                        }
+                        echo "parallel-default-started=${env.NODE_NAME}"
+                        sleep 5
+                        echo "parallel-default-survived=${env.NODE_NAME}"
+                    }
+                    """).formatted(failing.getNodeName()));
 
             j.assertBuildStatus(Result.FAILURE, run);
-            j.assertLogContains("branch-failed-", run);
+            j.assertLogContains("expected parallel failure", run);
+            j.assertLogContains("parallel-default-started=" + survivor.getNodeName(), run);
+            j.assertLogContains("parallel-default-survived=" + survivor.getNodeName(), run);
+        });
+    }
+
+    @Test
+    void parallelFailFastAbortsOtherBranches() throws Throwable {
+        sessions.then(j -> {
+            DumbSlave failing = j.createOnlineSlave(Label.get("parallel-fast-failure"));
+            DumbSlave interrupted = j.createOnlineSlave(Label.get("parallel-fast-failure"));
+
+            WorkflowRun run = build(j, ("""
+                    everyNode('parallel-fast-failure', true, true) {
+                        if (env.NODE_NAME == '%s') {
+                            sleep 2
+                            error 'expected parallel fail-fast failure'
+                        }
+                        echo "parallel-fast-started=${env.NODE_NAME}"
+                        sleep 60
+                        echo "parallel-fast-must-not-finish=${env.NODE_NAME}"
+                    }
+                    """).formatted(failing.getNodeName()));
+
+            j.assertBuildStatus(Result.FAILURE, run);
+            j.assertLogContains("expected parallel fail-fast failure", run);
+            j.assertLogContains("parallel-fast-started=" + interrupted.getNodeName(), run);
+            j.assertLogNotContains("parallel-fast-must-not-finish=" + interrupted.getNodeName(), run);
         });
     }
 
@@ -446,7 +545,7 @@ class EveryNodeStepTest {
             RefuseNode.nodeName = nodes.get(1).getNodeName();
             try {
                 WorkflowRun run = build(j, """
-                        everyNode(label: 'rollback-nodes', parallel: true) {
+                        everyNode(label: 'rollback-nodes', parallel: true, failFast: true) {
                             echo "orphan-body=${env.NODE_NAME}"
                         }
                         """);

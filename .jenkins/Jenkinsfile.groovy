@@ -104,7 +104,7 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
 
             stage('Current-node everyNode') {
                 def currentNode = env.NODE_NAME
-                everyNode(env.NODE_NAME) {
+                everyNode(env.NODE_NAME, false, true) {
                     assertValue(env.NODE_NAME, currentNode, 'current-node everyNode')
                     assertValue(env.STAGE_NAME, env.NODE_NAME, 'current-node everyNode stage')
                     echo "current-node-visited=${env.NODE_NAME}"
@@ -141,7 +141,7 @@ stage('Queued everyNode') {
 }
 
 stage('Parallel everyNode named arguments') {
-    everyNode(label: 'server', parallel: true) {
+    everyNode(label: 'server', parallel: true, failFast: false) {
         assertValue(env.STAGE_NAME, env.NODE_NAME, 'parallel named everyNode stage')
         exec "echo parallel-first-${env.NODE_NAME}"
         exec "echo parallel-second-${env.NODE_NAME}"
@@ -150,7 +150,7 @@ stage('Parallel everyNode named arguments') {
 }
 
 stage('Parallel everyNode positional arguments') {
-    everyNode('server', true) {
+    everyNode('server', true, true) {
         assertValue(env.STAGE_NAME, env.NODE_NAME, 'parallel positional everyNode stage')
         echo "parallel-node-visited=${env.NODE_NAME}"
     }

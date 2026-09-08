@@ -34,6 +34,7 @@ public final class EveryNodeStep extends Step {
 
     private final String label;
     private boolean parallel;
+    private boolean failFast;
     private String nodeName;
     private String nodeExpression;
     private Map<String, Closure<?>> branches;
@@ -58,6 +59,16 @@ public final class EveryNodeStep extends Step {
         this.parallel = parallel;
     }
 
+    @SuppressWarnings("unused") // Jenkins databinding reads this property reflectively.
+    public boolean isFailFast() {
+        return failFast;
+    }
+
+    @DataBoundSetter
+    public void setFailFast(boolean failFast) {
+        this.failFast = failFast;
+    }
+
     @DataBoundSetter
     public void setNodeName(String nodeName) {
         this.nodeName = nodeName;
@@ -78,9 +89,9 @@ public final class EveryNodeStep extends Step {
         if (branches != null) {
             @SuppressWarnings({"rawtypes", "unchecked"})
             Map<String, Closure> parallelBranches = (Map) branches;
-            return new ParallelStep(parallelBranches, true).start(context);
+            return new ParallelStep(parallelBranches, failFast).start(context);
         }
-        return new Execution(context, label, parallel, nodeName, nodeExpression);
+        return new Execution(context, label, parallel, failFast, nodeName, nodeExpression);
     }
 
     @Extension
@@ -126,6 +137,7 @@ public final class EveryNodeStep extends Step {
 
         private final String label;
         private final boolean parallel;
+        private final boolean failFast;
         private final String nodeName;
         private final String nodeExpression;
         private List<Target> targets;
@@ -137,12 +149,20 @@ public final class EveryNodeStep extends Step {
         private int next;
         private int finished;
         private Throwable failure;
+        private boolean stopping;
         private boolean complete;
 
-        private Execution(StepContext context, String label, boolean parallel, String nodeName, String nodeExpression) {
+        private Execution(
+                StepContext context,
+                String label,
+                boolean parallel,
+                boolean failFast,
+                String nodeName,
+                String nodeExpression) {
             super(context);
             this.label = label;
             this.parallel = parallel;
+            this.failFast = failFast;
             this.nodeName = nodeName;
             this.nodeExpression = nodeExpression;
         }
@@ -221,6 +241,7 @@ public final class EveryNodeStep extends Step {
                 if (complete) {
                     return;
                 }
+                stopping = true;
                 failure = cause;
                 activeTasks = tasks == null
                         ? List.of()
@@ -290,10 +311,18 @@ public final class EveryNodeStep extends Step {
                     inPlaceBody = null;
                 }
                 finished++;
-                if (!parallel && !removeSelectedTarget(result)) {
-                    failure = new IOException("everyNode completed on an unsnapshotted node: " + result);
+                boolean selectedTarget = true;
+                if (!parallel) {
+                    selectedTarget = removeSelectedTarget(result);
+                    if (!selectedTarget) {
+                        failure = new IOException("everyNode completed on an unsnapshotted node: " + result);
+                    }
                 }
-                if (!parallel && failure == null && !remaining.isEmpty()) {
+                if (!parallel
+                        && !stopping
+                        && selectedTarget
+                        && (!failFast || failure == null)
+                        && !remaining.isEmpty()) {
                     following = next++;
                 } else if ((parallel && finished == targets.size())
                         || (!parallel && (remaining.isEmpty() || failure != null))) {
@@ -306,7 +335,7 @@ public final class EveryNodeStep extends Step {
                 try {
                     launch(following);
                 } catch (Exception exception) {
-                    childFailed(following, exception);
+                    childFailed(following, null, exception);
                 }
             } else if (reportSuccess) {
                 getContext().onSuccess(null);
@@ -329,7 +358,8 @@ public final class EveryNodeStep extends Step {
             return false;
         }
 
-        private void childFailed(int index, Throwable cause) {
+        private void childFailed(int index, String nodeName, Throwable cause) {
+            int following = -1;
             Throwable reportedFailure = null;
             synchronized (this) {
                 if (complete) {
@@ -348,14 +378,32 @@ public final class EveryNodeStep extends Step {
                 } else if (failure != cause) {
                     failure.addSuppressed(cause);
                 }
-                if (!parallel || finished == targets.size()) {
+                if (!parallel
+                        && !stopping
+                        && !failFast
+                        && nodeName != null
+                        && removeSelectedTarget(nodeName)
+                        && !remaining.isEmpty()) {
+                    following = next++;
+                } else if (!parallel || finished == targets.size()) {
                     complete = true;
                     reportedFailure = failure;
                 }
             }
-            if (reportedFailure != null) {
+            if (following >= 0) {
+                try {
+                    launch(following);
+                } catch (Exception exception) {
+                    childFailed(following, null, exception);
+                }
+            } else if (reportedFailure != null) {
                 getContext().onFailure(reportedFailure);
             }
+        }
+
+        private synchronized String selectedNodeName(int index) {
+            NodeQueueTask task = tasks.get(index);
+            return task == null ? null : task.getSelectedNodeName();
         }
 
         private void cancelInPlace(Throwable cause) {
@@ -422,7 +470,7 @@ public final class EveryNodeStep extends Step {
 
         @Override
         public void onFailure(StepContext context, Throwable failure) {
-            owner.childFailed(index, failure);
+            owner.childFailed(index, nodeName, failure);
         }
     }
 
@@ -447,7 +495,7 @@ public final class EveryNodeStep extends Step {
 
         @Override
         public void onFailure(@NonNull Throwable failure) {
-            owner.childFailed(index, failure);
+            owner.childFailed(index, owner.selectedNodeName(index), failure);
         }
     }
 }

@@ -218,6 +218,29 @@ everyNode('unity', true) {
 }
 ```
 
+Failures do not stop other selected nodes by default. This applies to both
+execution modes: sequential execution continues with the remaining nodes, and
+parallel execution lets already-running branches finish. After all selected
+nodes have completed, `everyNode` reports the recorded failures.
+
+Set `failFast: true` to stop after the first failure. In sequential mode, the
+remaining nodes are not started. In parallel mode, unfinished branches are
+interrupted:
+
+```groovy
+everyNode(label: 'unity', parallel: true, failFast: true) {
+    echo "Running on ${env.NODE_NAME}"
+}
+
+everyNode('unity', true, true) {
+    echo "Running on ${env.NODE_NAME}"
+}
+
+everyNode('unity', false, true) {
+    echo "Running sequentially and stop after the first failure"
+}
+```
+
 The selection contract is:
 
 1. Parse the Jenkins label expression when one is supplied.
@@ -235,8 +258,9 @@ and the branch waits for that node to return. When a branch remains queued,
 `everyNode` prints Jenkins's blockage reason after 15 seconds.
 
 Parallel branches are named after their concrete nodes. A failure in any branch
-fails `everyNode`; interruption is propagated without conversion to an
-ordinary failure.
+fails `everyNode` after the configured fail-fast behavior has completed.
+External interruption is always propagated to every active branch without
+conversion to an ordinary failure.
 
 ## Reusing a matching node
 
