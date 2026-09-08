@@ -86,11 +86,14 @@ integration tests as the named servers.
 - The deployment target is container `jenkins` on Docker context `groke`.
   Always pass `--context groke`; do not rely on the active Docker context. This
   installation uses `JENKINS_HOME=/jenkins/home`.
-- Before restarting, put Jenkins in quiet mode so no new builds start, then wait
-  for all executor-running builds to finish. Do not rely on safe restart alone:
-  Jenkins may consider a Pipeline restart-safe while it is still running, and a
-  non-resumable Pipeline can then fail during restart. Do not abort or ignore
-  running jobs to make a restart happen sooner.
+- Before restarting, wait for all executor-running builds to finish, then put
+  Jenkins in quiet mode and immediately recheck the executors. Quiet mode pauses
+  running Pipeline CPS execution, so do not enable it while waiting for a build
+  to finish. If a build started before quiet mode took effect, cancel quiet mode,
+  let that build finish, and repeat the sequence.
+- Do not rely on safe restart alone: Jenkins may consider a Pipeline restart-safe
+  while it is still running, and a non-resumable Pipeline can then fail during
+  restart. Do not abort or ignore running jobs to make a restart happen sooner.
 - Queue items and Pipeline builds waiting for an executor are queued work, not
   running jobs. They do not block a restart, and Jenkins preserves them across
   restart.
