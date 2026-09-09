@@ -355,6 +355,12 @@ Windows command paths, Linux and Windows sidecars, and sequential and parallel
 node execution. GitHub Actions runs the full Maven verification on Linux; the
 same suite can be run locally on Windows.
 
+The POM pins the tested minimum versions of every direct Jenkins plugin
+dependency. The imported BOM still manages the remaining build graph, but a BOM
+update must not silently raise the plugin requirements recorded in the HPI
+manifest. Keep the direct pins and the minimum-version test graph aligned when
+updating Pipeline dependencies.
+
 ## License
 
 [MIT](LICENSE)
