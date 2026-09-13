@@ -52,7 +52,7 @@
     <workflow-cps.version>3520.va_8fc49e2f96f</workflow-cps.version>
     <workflow-durable-task-step.version>1458.va_2e10a_a_b_7c4d</workflow-durable-task-step.version>
     <workflow-job.version>1571.1580.v18e46842c125</workflow-job.version>
-    <workflow-step-api.version>710.v3e456cc85233</workflow-step-api.version>
+    <workflow-step-api.version>724.v538c2362b_dfb_</workflow-step-api.version>
     <workflow-support.version>1015.v785e5a_b_b_8b_22</workflow-support.version>
     <palantir.java.format.version>2.97.0</palantir.java.format.version>
     <spotless.check.skip>false</spotless.check.skip>
