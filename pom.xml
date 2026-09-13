@@ -47,7 +47,7 @@
     <durable-task.version>581.v299a_5609d767</durable-task.version>
     <pipeline-stage-step.version>2.3</pipeline-stage-step.version>
     <script-security.version>1378.vf25626395f49</script-security.version>
-    <workflow-api.version>1384.vdc05a_48f535f</workflow-api.version>
+    <workflow-api.version>1413.v2ff1a_5e720fa_</workflow-api.version>
     <workflow-basic-steps.version>1098.v808b_fd7f8cf4</workflow-basic-steps.version>
     <workflow-cps.version>3520.va_8fc49e2f96f</workflow-cps.version>
     <workflow-durable-task-step.version>1458.va_2e10a_a_b_7c4d</workflow-durable-task-step.version>
