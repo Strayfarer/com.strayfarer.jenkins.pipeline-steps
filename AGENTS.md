@@ -124,6 +124,12 @@ When release operations are authorized, the complete release cycle is:
 
 ## General
 
+### Tool selection
+
+Before using generic UI automation to inspect or control an application,
+discover the available application-specific MCP tools and use them for supported
+operations.
+
 ### Meta commands
 
 These short messages have special handling when they appear alone in a user
