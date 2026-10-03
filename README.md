@@ -339,6 +339,8 @@ POM. The minimum Jenkins version is 2.555.3.
 ```
 
 On Windows, use `mvnw.cmd` instead of `./mvnw`.
+The project-level `.mvn/maven.config` supplies the Jenkins Maven repository
+during parent POM resolution while retaining personal Maven user settings.
 
 Java is formatted by Palantir Java Format 2.97.0 through Spotless. IntelliJ
 IDEA requires `palantir-java-format` plugin version 2.97.0 or newer; the project

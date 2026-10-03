@@ -41,18 +41,18 @@
   </scm>
 
   <properties>
-    <revision>SNAPSHOT</revision>
     <scmTag>HEAD</scmTag>
     <jenkins.version>2.555.3</jenkins.version>
+    <maven.compiler.release>21</maven.compiler.release>
     <durable-task.version>581.v299a_5609d767</durable-task.version>
-    <pipeline-stage-step.version>2.3</pipeline-stage-step.version>
+    <pipeline-stage-step.version>345.va_96187909426</pipeline-stage-step.version>
     <script-security.version>1378.vf25626395f49</script-security.version>
-    <workflow-api.version>1384.vdc05a_48f535f</workflow-api.version>
+    <workflow-api.version>1413.v2ff1a_5e720fa_</workflow-api.version>
     <workflow-basic-steps.version>1098.v808b_fd7f8cf4</workflow-basic-steps.version>
     <workflow-cps.version>4378.v7a_08f1b_b_f8f4</workflow-cps.version>
     <workflow-durable-task-step.version>1458.va_2e10a_a_b_7c4d</workflow-durable-task-step.version>
     <workflow-job.version>1571.1580.v18e46842c125</workflow-job.version>
-    <workflow-step-api.version>710.v3e456cc85233</workflow-step-api.version>
+    <workflow-step-api.version>724.v538c2362b_dfb_</workflow-step-api.version>
     <workflow-support.version>1015.v785e5a_b_b_8b_22</workflow-support.version>
     <palantir.java.format.version>2.97.0</palantir.java.format.version>
     <spotless.check.skip>false</spotless.check.skip>
