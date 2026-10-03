@@ -8,6 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## 0.7.0 - 2026-10-04
+
+### Added
+
+- Add `connectToDockerContainer(name)` to create an explicit command handle with
+  `exec`, `execStatus`, and `execStdout`, leaving ordinary commands on the agent.
+
+### Changed
+
+- Defer named-container validation for both Docker helpers until a command runs.
+  Inspect the container for each command without caching its ID.
+- Stop publishing `PIPELINE_DOCKER_CONTAINER_ID`,
+  `PIPELINE_DOCKER_CONTAINER_NAME`, and `PIPELINE_DOCKER_CONTAINER_OS`.
+- Provision and clean up Docker containers within the Jenkins integration tests
+  instead of relying on pre-existing sidecars.
+
+
 ## 0.6.1 - 2026-09-09
 
 ### Fixed
