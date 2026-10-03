@@ -4,13 +4,24 @@ def assertValue(actual, expected, description) {
     }
 }
 
-def composeUnityContainer() {
-    def containers = execStdout('docker ps --filter label=net.slothsoft.role=compose-unity --format "{{.ID}}"')
-    def containerIds = containers.readLines()
-    if (containerIds.size() != 1) {
-        error "Expected exactly one local compose-unity container, found ${containerIds.size()}"
+def withTestDockerContainer(Closure body) {
+    def agentContainer = execStdout('hostname')
+    def image = 'faulo/compose-unity:latest'
+    def sidecarCommand = isUnix()
+        ? 'sleep 3600'
+        : "pwsh -NoLogo -NoProfile -NonInteractive -Command 'Start-Sleep -Seconds 3600'"
+    def containerId = execStdout "docker run -d --label net.slothsoft.test=pipeline-steps --volumes-from ${agentContainer} ${image} ${sidecarCommand}"
+    try {
+        body(containerId)
+    } finally {
+        withEnv(["PIPELINE_TEST_CONTAINER=${containerId}"]) {
+            if (isUnix()) {
+                exec 'docker rm -f --volumes "$PIPELINE_TEST_CONTAINER"'
+            } else {
+                exec 'docker rm -f --volumes $env:PIPELINE_TEST_CONTAINER'
+            }
+        }
     }
-    return containerIds[0]
 }
 
 def testNodes = ['windows && server', 'linux && server']
@@ -87,38 +98,46 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('insideDockerContainer exec') {
-                    insideDockerContainer(composeUnityContainer()) {
-                        exec 'echo container-exec-ok'
+                    withTestDockerContainer { containerId ->
+                        insideDockerContainer(containerId) {
+                            exec 'echo container-exec-ok'
+                        }
                     }
                 }
             }
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('insideDockerContainer execStatus') {
-                    insideDockerContainer(composeUnityContainer()) {
-                        assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+                    withTestDockerContainer { containerId ->
+                        insideDockerContainer(containerId) {
+                            assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+                        }
                     }
                 }
             }
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('insideDockerContainer execStdout') {
-                    insideDockerContainer(composeUnityContainer()) {
-                        assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
-                        def files = execStdout bookkeepingCommand
-                        assertValue(files, '', 'container command bookkeeping outside current directory')
+                    withTestDockerContainer { containerId ->
+                        insideDockerContainer(containerId) {
+                            assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                            def files = execStdout bookkeepingCommand
+                            assertValue(files, '', 'container command bookkeeping outside current directory')
+                        }
                     }
                 }
             }
 
             catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
                 stage('connectToDockerContainer commands') {
-                    def container = connectToDockerContainer(composeUnityContainer())
-                    exec 'echo host-command-outside-container'
-                    container.exec 'echo connected-container-exec-ok'
-                    assertValue(container.execStatus('exit 9'), 9, 'connected container execStatus')
-                    assertValue(container.execStdout('echo connected-container-stdout-ok'),
-                        'connected-container-stdout-ok', 'connected container execStdout')
+                    withTestDockerContainer { containerId ->
+                        def container = connectToDockerContainer(containerId)
+                        exec 'echo host-command-outside-container'
+                        container.exec 'echo connected-container-exec-ok'
+                        assertValue(container.execStatus('exit 9'), 9, 'connected container execStatus')
+                        assertValue(container.execStdout('echo connected-container-stdout-ok'),
+                            'connected-container-stdout-ok', 'connected container execStdout')
+                    }
                 }
             }
 
@@ -205,20 +224,26 @@ pipeline {
         stage('Declarative Pipeline compatibility') {
             steps {
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer(composeUnityContainer()) {
-                        exec 'echo container-exec-ok'
+                    withTestDockerContainer { containerId ->
+                        insideDockerContainer(containerId) {
+                            exec 'echo container-exec-ok'
+                        }
                     }
                 }
 
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer(composeUnityContainer()) {
-                        assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+                    withTestDockerContainer { containerId ->
+                        insideDockerContainer(containerId) {
+                            assertValue(execStatus('exit 9'), 9, 'execStatus in container')
+                        }
                     }
                 }
 
                 catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                    insideDockerContainer(composeUnityContainer()) {
-                        assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                    withTestDockerContainer { containerId ->
+                        insideDockerContainer(containerId) {
+                            assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
+                        }
                     }
                 }
             }
