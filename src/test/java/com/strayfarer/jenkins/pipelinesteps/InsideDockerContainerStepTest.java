@@ -3,6 +3,7 @@ package com.strayfarer.jenkins.pipelinesteps;
 import static java.util.Objects.requireNonNull;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -38,13 +39,10 @@ class InsideDockerContainerStepTest {
     void nestedScopesRouteLexicallyAndRestoreAfterFailure() throws Throwable {
         sessions.then(j -> {
             Path log = installFakeDocker(j);
-            String metadata = Functions.isWindows()
-                    ? "echo metadata=$env:PIPELINE_DOCKER_CONTAINER_NAME"
-                    : "echo metadata=$PIPELINE_DOCKER_CONTAINER_NAME";
             WorkflowRun run = build(j, """
                     node {
                         insideDockerContainer('outer') {
-                            exec '%s'
+                            exec 'echo outer-command'
                             try {
                                 insideDockerContainer('inner') {
                                     exec 'exit 5'
@@ -55,17 +53,16 @@ class InsideDockerContainerStepTest {
                         }
                         exec 'echo restored-host'
                     }
-                    """.formatted(metadata));
+                    """);
 
             j.assertBuildStatusSuccess(run);
-            j.assertLogContains("metadata=outer", run);
+            j.assertLogContains("outer-command", run);
             j.assertLogContains("restored-outer", run);
             j.assertLogContains("restored-host", run);
             List<String> lines = Files.readAllLines(log);
-            assertEquals(1, countInspections(lines, "|outer"));
+            assertEquals(2, countInspections(lines, "|outer"));
             assertEquals(1, countInspections(lines, "|inner"));
-            assertTrue(
-                    Files.readString(log).contains("{{.Id}} {{.State.Running}} {{.Platform}}"), Files.readString(log));
+            assertTrue(Files.readString(log).contains("{{.State.Running}} {{.Platform}}"), Files.readString(log));
             assertEquals(List.of("outer", "inner", "outer"), executions(lines));
         });
     }
@@ -85,6 +82,110 @@ class InsideDockerContainerStepTest {
 
             j.assertBuildStatusSuccess(run);
             j.assertLogContains("container-status=9", run);
+        });
+    }
+
+    @Test
+    void containerSelectionAndConnectionDeferInspectionUntilCommandExecution() throws Throwable {
+        sessions.then(j -> {
+            Path log = installFakeDocker(j);
+            WorkflowRun run = build(j, """
+                    node {
+                        def container = connectToDockerContainer('missing')
+                        insideDockerContainer('missing') {
+                            echo 'missing-scope-entered'
+                        }
+                        echo 'missing-handle-created'
+                        try {
+                            container.exec 'echo should-not-run'
+                            error 'missing container command unexpectedly succeeded'
+                        } catch (hudson.AbortException expected) {
+                            echo "missing-command=${expected.message}"
+                        }
+                        insideDockerContainer('missing') {
+                            try {
+                                exec 'echo should-not-run'
+                                error 'missing scoped command unexpectedly succeeded'
+                            } catch (hudson.AbortException expected) {
+                                echo "missing-scoped-command=${expected.message}"
+                            }
+                        }
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("missing-scope-entered", run);
+            j.assertLogContains("missing-handle-created", run);
+            j.assertLogContains("Docker container 'missing' does not exist or cannot be inspected", run);
+            assertEquals(2, countInspections(Files.readAllLines(log), "|missing"));
+            assertEquals(List.of(), executions(Files.readAllLines(log)));
+        });
+    }
+
+    @Test
+    void connectedContainerHasIndependentCommandMethodsAndResolvesEnvironmentAtExecution() throws Throwable {
+        sessions.then(j -> {
+            Path log = installFakeDocker(j);
+            WorkflowRun run = build(j, """
+                    node {
+                        env.FORWARDED_VALUE = 'before'
+                        def container = connectToDockerContainer(
+                            container: 'connected', environment: ['FORWARDED_VALUE', '', 'FORWARDED_VALUE'])
+                        env.FORWARDED_VALUE = 'after'
+                        exec 'echo host-before'
+                        container.exec 'echo connected-exec'
+                        assert container.execStatus('exit 7') == 7
+                        assert container.execStdout(script: 'echo connected-stdout') == 'connected-stdout'
+                        insideDockerContainer('outer') {
+                            container.exec 'echo connected-inside-outer'
+                            exec 'echo outer-exec'
+                        }
+                        exec 'echo host-after'
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("host-before", run);
+            j.assertLogContains("host-after", run);
+            j.assertLogContains("connected-stdout", run);
+            String dockerLog = Files.readString(log);
+            assertEquals(
+                    List.of("connected", "connected", "connected", "connected", "outer"),
+                    executions(Files.readAllLines(log)));
+            assertEquals(4, countInspections(Files.readAllLines(log), "|connected"));
+            assertTrue(dockerLog.contains("ENV|FORWARDED_VALUE|after"), dockerLog);
+            assertFalse(dockerLog.contains("ENV|FORWARDED_VALUE|before"), dockerLog);
+        });
+    }
+
+    @Test
+    void connectedContainerHandleSurvivesAControllerRestart() throws Throwable {
+        sessions.then(j -> {
+            installFakeDocker(j);
+            String command = Functions.isWindows()
+                    ? "Write-Output 'connected-before'; Start-Sleep -Seconds 8; Write-Output 'connected-after'"
+                    : "echo connected-before; sleep 8; echo connected-after";
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "connected-restart");
+            job.setDefinition(new CpsFlowDefinition("""
+                    node {
+                        def container = connectToDockerContainer('restart-container')
+                        def output = container.execStdout "%s"
+                        echo "connected-output=${output.contains('connected-after')}"
+                        container.exec 'echo connected-later'
+                    }
+                    """.formatted(command), true));
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
+            j.waitForMessage("connected-before", run);
+        });
+        sessions.then(j -> {
+            WorkflowJob job = j.jenkins.getItemByFullName("connected-restart", WorkflowJob.class);
+            assertNotNull(job);
+            WorkflowRun run = j.waitForCompletion(requireNonNull(job.getLastBuild()));
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("connected-after", run);
+            j.assertLogContains("connected-output=true", run);
+            j.assertLogContains("connected-later", run);
         });
     }
 
@@ -144,24 +245,6 @@ class InsideDockerContainerStepTest {
     }
 
     @Test
-    void metadataVariablesAloneDoNotEnableRouting() throws Throwable {
-        sessions.then(j -> {
-            Path log = installFakeDocker(j);
-            WorkflowRun run = build(j, """
-                    node {
-                        env.PIPELINE_DOCKER_CONTAINER_NAME = 'forged'
-                        env.PIPELINE_DOCKER_CONTAINER_ID = 'forged-id'
-                        env.PIPELINE_DOCKER_CONTAINER_OS = 'linux'
-                        exec 'echo host-command'
-                    }
-                    """);
-
-            j.assertBuildStatusSuccess(run);
-            assertEquals(List.of(), executions(Files.readAllLines(log)));
-        });
-    }
-
-    @Test
     void abortStopsTheContainerProcessAndPreservesInterruption() throws Throwable {
         sessions.then(j -> {
             Path log = installFakeDocker(j);
@@ -197,16 +280,12 @@ class InsideDockerContainerStepTest {
         assertEquals(List.of("VALID", "ALSO_VALID_2"), step.getEnvironment());
         assertThrows(IllegalArgumentException.class, () -> step.setEnvironment(List.of("VALID", "NOT-VALID")));
 
-        assertThrows(AbortException.class, () -> DockerContext.fromInspection("missing", List.of(), "1\n"));
-        assertThrows(
-                AbortException.class, () -> DockerContext.fromInspection("stopped", List.of(), "0\nid false linux\n"));
-        assertThrows(
-                AbortException.class,
-                () -> DockerContext.fromInspection("unsupported", List.of(), "0\nid true plan9\n"));
-        DockerContext context = DockerContext.fromInspection("ready", List.of("VALUE"), "0\nid true linux\n");
+        assertThrows(AbortException.class, () -> DockerContext.osFromInspection("missing", "1\n"));
+        assertThrows(AbortException.class, () -> DockerContext.osFromInspection("stopped", "0\nfalse linux\n"));
+        assertThrows(AbortException.class, () -> DockerContext.osFromInspection("unsupported", "0\ntrue plan9\n"));
+        DockerContext context = new DockerContext("ready", List.of("VALUE"));
         assertEquals("ready", context.container());
-        assertEquals("id", context.id());
-        assertEquals("linux", context.os());
+        assertEquals("linux", DockerContext.osFromInspection("ready", "0\ntrue linux\n"));
     }
 
     @Test

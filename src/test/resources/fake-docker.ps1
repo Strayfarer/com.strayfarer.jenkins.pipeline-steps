@@ -10,9 +10,9 @@ if ($DockerArgs[0] -eq 'inspect') {
     $container = $DockerArgs[-1]
     switch ($container) {
         'missing' { exit 1 }
-        'stopped' { Write-Output 'id-stopped false windows'; exit 0 }
-        'unsupported' { Write-Output 'id-unsupported true plan9'; exit 0 }
-        default { Write-Output "id-$container true windows"; exit 0 }
+        'stopped' { Write-Output 'false windows'; exit 0 }
+        'unsupported' { Write-Output 'true plan9'; exit 0 }
+        default { Write-Output 'true windows'; exit 0 }
     }
 }
 

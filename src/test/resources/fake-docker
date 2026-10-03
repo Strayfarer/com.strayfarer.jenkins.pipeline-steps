@@ -15,9 +15,9 @@ case "$1" in
         for container do :; done
         case "$container" in
             missing) exit 1 ;;
-            stopped) printf 'id-stopped false linux\n' ;;
-            unsupported) printf 'id-unsupported true plan9\n' ;;
-            *) printf 'id-%s true linux\n' "$container" ;;
+            stopped) printf 'false linux\n' ;;
+            unsupported) printf 'true plan9\n' ;;
+            *) printf 'true linux\n' ;;
         esac
         ;;
     exec)

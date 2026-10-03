@@ -111,6 +111,31 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
                 }
             }
 
+            catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                stage('connectToDockerContainer commands') {
+                    def container = connectToDockerContainer(composeUnityContainer())
+                    exec 'echo host-command-outside-container'
+                    container.exec 'echo connected-container-exec-ok'
+                    assertValue(container.execStatus('exit 9'), 9, 'connected container execStatus')
+                    assertValue(container.execStdout('echo connected-container-stdout-ok'),
+                        'connected-container-stdout-ok', 'connected container execStdout')
+                }
+            }
+
+            stage('Deferred Docker container validation') {
+                def missing = connectToDockerContainer('pipeline-steps-missing-container')
+                insideDockerContainer('pipeline-steps-missing-container') {
+                    echo 'Missing container scope entered without inspection'
+                }
+                try {
+                    missing.exec 'echo unexpected'
+                    error 'Missing container command unexpectedly succeeded'
+                } catch (hudson.AbortException expected) {
+                    assertValue(expected.message.contains('does not exist or cannot be inspected'),
+                        true, 'missing container fails at command execution')
+                }
+            }
+
             stage('Current-node everyNode') {
                 def currentNode = env.NODE_NAME
                 everyNode(env.NODE_NAME, false, true) {

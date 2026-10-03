@@ -10,8 +10,9 @@ The plugin provides the following Pipeline steps:
 
 - `exec`, `execStatus`, and `execStdout` run a command using the native shell of
   the current agent or active Docker sidecar.
-- `insideDockerContainer` lexically routes nested `exec*` calls into a named,
-  already-running Docker container.
+- `insideDockerContainer` lexically routes nested `exec*` calls into a named
+  Docker container; `connectToDockerContainer` returns a handle for explicit
+  container commands.
 - `withEnvFile` applies a dotenv file to a Pipeline body.
 - `everyNode` runs a Pipeline body once on every online node matching a Jenkins
   label expression.
@@ -85,8 +86,8 @@ after entering `dir(...)`.
 
 ## Docker sidecars
 
-`insideDockerContainer` selects an existing Docker container for nested
-`exec*` calls:
+`insideDockerContainer` selects a named Docker container for nested `exec*`
+calls:
 
 ```groovy
 insideDockerContainer('build-sidecar') {
@@ -112,10 +113,30 @@ must not be placed in Docker command-line arguments or logs. Environment names
 must match `[A-Za-z_][A-Za-z0-9_]*`; empty entries are ignored and duplicates
 are forwarded once.
 
-At scope entry, the plugin inspects the container once and rejects a missing,
-stopped, or unsupported container. Linux and Windows containers are supported.
-Docker inspection and `docker exec` always run on the Jenkins agent, even when
-container scopes are nested.
+Entering a scope does not inspect the container. Each container command inspects
+its target immediately before execution and rejects a missing, stopped, or
+unsupported container at that point. Linux and Windows containers are
+supported. Docker inspection and `docker exec` always run on the Jenkins agent,
+even when container scopes are nested.
+
+`connectToDockerContainer` returns a serializable handle with the same three
+command methods and result contracts as the Pipeline `exec*` steps. Creating
+the handle does not inspect the container. Unqualified `exec*` calls still use
+the current agent or lexical `insideDockerContainer` scope:
+
+```groovy
+def container = connectToDockerContainer('build-sidecar')
+exec 'docker info'                  // current agent
+container.exec 'dotnet test'        // named container
+int status = container.execStatus('git diff --quiet')
+String version = container.execStdout(script: 'dotnet --version')
+```
+
+The handle also accepts `container: 'build-sidecar', environment: ['NUGET_TOKEN']`.
+Its methods accept the same string or map command forms and common options as
+the corresponding `exec*` steps. Forwarded environment values are resolved
+when each command executes. A handle can be used within a different container
+scope without changing that scope's routing.
 
 Nested scopes are lexical. The innermost scope wins, and the previous context
 is restored after success, failure, or interruption:
@@ -131,15 +152,6 @@ insideDockerContainer('outer') {
     exec 'runs in outer again'
 }
 ```
-
-The active scope contributes the following metadata to its body:
-
-- `PIPELINE_DOCKER_CONTAINER_NAME`
-- `PIPELINE_DOCKER_CONTAINER_ID`
-- `PIPELINE_DOCKER_CONTAINER_OS`
-
-These values are scoped implementation metadata, not a mechanism for enabling
-container execution. Setting them manually must not affect `exec*` routing.
 
 Commands run with the current Jenkins `pwd()` as their container working
 directory. The workspace, `WORKSPACE_TMP`, and nested temporary directories
@@ -324,9 +336,6 @@ def call(Closure body) {
     }
 }
 ```
-
-Unity initialization can distinguish a replaced sidecar through
-`PIPELINE_DOCKER_CONTAINER_ID`.
 
 ## Development
 

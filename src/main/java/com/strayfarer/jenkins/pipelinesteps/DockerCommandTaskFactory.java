@@ -19,6 +19,7 @@ final class DockerCommandTaskFactory {
 
     static DurableTask task(
             DockerContext docker,
+            String containerOs,
             String script,
             FilePath workspace,
             Launcher launcher,
@@ -29,7 +30,7 @@ final class DockerCommandTaskFactory {
         String pidFileName = ".pipeline-docker-pid-" + UUID.randomUUID();
         FilePath temporaryDirectory = WorkspaceTemporaryFiles.directory(workspace);
         String pidFile = temporaryDirectory.child(pidFileName).getRemote();
-        String containerPidFile = containerPath(temporaryDirectory.getRemote(), pidFileName, docker.os());
+        String containerPidFile = containerPath(temporaryDirectory.getRemote(), pidFileName, containerOs);
 
         List<String> arguments = new ArrayList<>();
         arguments.add("docker");
@@ -42,7 +43,7 @@ final class DockerCommandTaskFactory {
         }
         arguments.add("--");
         arguments.add(docker.container());
-        if ("linux".equals(docker.os())) {
+        if ("linux".equals(containerOs)) {
             arguments.addAll(List.of(
                     "setsid",
                     "--wait",
@@ -69,7 +70,7 @@ final class DockerCommandTaskFactory {
         DurableTask hostTask =
                 CommandTaskFactory.nativeTask(hostScript, workspace, launcher, environment, captureStdout);
         return new DockerProcessDurableTask(
-                hostTask, docker.container(), docker.os(), pidFile, containerPidFile, token);
+                hostTask, docker.container(), containerOs, pidFile, containerPidFile, token);
     }
 
     private static String containerPath(String workspace, String file, String os) {
