@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## 0.8.0 - 2026-10-04
+
+### Added
+
+- Allow `insideDockerContainer` and `connectToDockerContainer` to select a
+  running sidecar by a Docker label key/value pair. The label is resolved for
+  each command, and any matching running container may be selected.
+
+
 ## 0.7.0 - 2026-10-04
 
 ### Added
