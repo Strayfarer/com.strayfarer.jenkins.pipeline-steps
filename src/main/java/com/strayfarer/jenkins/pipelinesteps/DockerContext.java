@@ -5,20 +5,48 @@ import java.io.Serial;
 import java.io.Serializable;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.regex.Pattern;
 
-record DockerContext(String container, List<String> environment) implements Serializable {
+record DockerContext(String container, Map<String, String> label, List<String> environment) implements Serializable {
 
     @Serial
     private static final long serialVersionUID = 1L;
 
     private static final Pattern ENVIRONMENT_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
+    DockerContext(String container, List<String> environment) {
+        this(container, Map.of(), environment);
+    }
+
     DockerContext {
-        if (container == null || container.isBlank()) {
-            throw new IllegalArgumentException("container is required");
+        label = normalizeLabel(label);
+        if ((container == null || container.isBlank()) == label.isEmpty()) {
+            throw new IllegalArgumentException("Exactly one of container or label is required");
         }
         environment = normalizeEnvironment(environment);
+    }
+
+    static Map<String, String> normalizeLabel(Map<?, ?> label) {
+        if (label == null || label.isEmpty()) {
+            return Map.of();
+        }
+        if (label.size() != 1) {
+            throw new IllegalArgumentException("label must contain exactly one key/value pair");
+        }
+        Map.Entry<?, ?> entry = label.entrySet().iterator().next();
+        if (!(entry.getKey() instanceof String key) || key.isBlank() || key.contains("=")) {
+            throw new IllegalArgumentException("label key must be a nonempty string without '='");
+        }
+        if (!(entry.getValue() instanceof String value)) {
+            throw new IllegalArgumentException("label value must be a string");
+        }
+        return Map.of(key, value);
+    }
+
+    String labelFilter() {
+        Map.Entry<String, String> entry = label.entrySet().iterator().next();
+        return entry.getKey() + "=" + entry.getValue();
     }
 
     static List<String> normalizeEnvironment(List<String> environment) {

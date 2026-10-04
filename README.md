@@ -10,9 +10,9 @@ The plugin provides the following Pipeline steps:
 
 - `exec`, `execStatus`, and `execStdout` run a command using the native shell of
   the current agent or active Docker sidecar.
-- `insideDockerContainer` lexically routes nested `exec*` calls into a named
-  Docker container; `connectToDockerContainer` returns a handle for explicit
-  container commands.
+- `insideDockerContainer` lexically routes nested `exec*` calls into a Docker
+  container selected by name or label; `connectToDockerContainer` returns a
+  handle for explicit container commands.
 - `withEnvFile` applies a dotenv file to a Pipeline body.
 - `everyNode` runs a Pipeline body once on every online node matching a Jenkins
   label expression.
@@ -97,6 +97,25 @@ insideDockerContainer('build-sidecar') {
 }
 ```
 
+To select a running sidecar whose name may change, use a single label key/value
+pair instead:
+
+```groovy
+insideDockerContainer(label: ['net.slothsoft.role': 'unity-sidecar']) {
+    exec 'dotnet test'
+}
+
+def sidecar = connectToDockerContainer(label: ['net.slothsoft.role': 'unity-sidecar'])
+sidecar.exec 'dotnet test'
+exec 'docker info' // still runs on the agent
+```
+
+Supply exactly one of `container` or `label`. If multiple running containers
+have the label, any one may be selected. An absent label match fails only when
+a container command executes. Each command resolves the label again, so a
+replacement container may be selected by the next command; the selected ID is
+kept for the duration and cleanup of that command.
+
 The extended form forwards an explicit environment-variable allowlist by name:
 
 ```groovy
@@ -113,11 +132,11 @@ must not be placed in Docker command-line arguments or logs. Environment names
 must match `[A-Za-z_][A-Za-z0-9_]*`; empty entries are ignored and duplicates
 are forwarded once.
 
-Entering a scope does not inspect the container. Each container command inspects
-its target immediately before execution and rejects a missing, stopped, or
-unsupported container at that point. Linux and Windows containers are
-supported. Docker inspection and `docker exec` always run on the Jenkins agent,
-even when container scopes are nested.
+Entering a scope does not inspect the container. Each container command selects
+and inspects its target immediately before execution and rejects a missing,
+stopped, or unsupported container at that point. Linux and Windows containers
+are supported. Docker selection, inspection, and `docker exec` always run on
+the Jenkins agent, even when container scopes are nested.
 
 `connectToDockerContainer` returns a serializable handle with the same three
 command methods and result contracts as the Pipeline `exec*` steps. Creating

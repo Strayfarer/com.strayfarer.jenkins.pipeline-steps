@@ -3,6 +3,7 @@ package com.strayfarer.jenkins.pipelinesteps;
 import edu.umd.cs.findbugs.annotations.NonNull;
 import hudson.Extension;
 import java.util.List;
+import java.util.Map;
 import org.jenkinsci.plugins.workflow.steps.StepContext;
 import org.kohsuke.stapler.DataBoundConstructor;
 import org.kohsuke.stapler.DataBoundSetter;
@@ -12,14 +13,12 @@ public final class ConnectedDockerCommandStep extends AbstractCommandStep {
 
     private final String container;
     private final ResultMode mode;
+    private Map<String, String> label = Map.of();
     private List<String> environment = List.of();
 
     @DataBoundConstructor
     public ConnectedDockerCommandStep(String script, String container, String mode) {
         super(script);
-        if (container == null || container.isBlank()) {
-            throw new IllegalArgumentException("container is required");
-        }
         this.container = container;
         this.mode = ResultMode.valueOf(mode);
     }
@@ -36,6 +35,15 @@ public final class ConnectedDockerCommandStep extends AbstractCommandStep {
         return environment;
     }
 
+    public Map<String, String> getLabel() {
+        return label;
+    }
+
+    @DataBoundSetter
+    public void setLabel(Map<String, String> label) {
+        this.label = DockerContext.normalizeLabel(label);
+    }
+
     @DataBoundSetter
     public void setEnvironment(List<String> environment) {
         this.environment = DockerContext.normalizeEnvironment(environment);
@@ -48,7 +56,7 @@ public final class ConnectedDockerCommandStep extends AbstractCommandStep {
 
     @Override
     DockerContext dockerContext(StepContext context) {
-        return new DockerContext(container, environment);
+        return new DockerContext(container, label, environment);
     }
 
     @Extension

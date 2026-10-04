@@ -6,6 +6,21 @@ if (-not $log) {
 }
 Add-Content -LiteralPath $log -Value ('ARGS|' + ($DockerArgs -join '|'))
 
+if ($DockerArgs[0] -eq 'ps') {
+    $filter = $DockerArgs[-1]
+    switch ($filter) {
+        'label=net.slothsoft.role=missing' { exit 0 }
+        'label=net.slothsoft.role=multiple' { Write-Output 'label-first'; Write-Output 'label-second'; exit 0 }
+        'label=net.slothsoft.role=replacement' {
+            $count = @(Get-Content -LiteralPath $log | Where-Object { $_.Contains($filter) }).Count
+            if ($count -eq 1) { Write-Output 'label-first' } else { Write-Output 'label-second' }
+            exit 0
+        }
+        'label=net.slothsoft.role=unity-sidecar' { Write-Output 'label-first'; exit 0 }
+        default { exit 1 }
+    }
+}
+
 if ($DockerArgs[0] -eq 'inspect') {
     $container = $DockerArgs[-1]
     switch ($container) {

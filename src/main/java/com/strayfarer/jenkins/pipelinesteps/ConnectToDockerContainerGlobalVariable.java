@@ -19,7 +19,7 @@ import org.jenkinsci.plugins.workflow.cps.CpsClosure2;
 import org.jenkinsci.plugins.workflow.cps.CpsScript;
 import org.jenkinsci.plugins.workflow.cps.GlobalVariable;
 
-/** Creates a serializable handle for commands in a named Docker container. */
+/** Creates a serializable handle for commands in a Docker container. */
 @Extension
 public final class ConnectToDockerContainerGlobalVariable extends GlobalVariable {
 
@@ -52,8 +52,12 @@ public final class ConnectToDockerContainerGlobalVariable extends GlobalVariable
         @Whitelisted
         public Map<String, CpsClosure2> call(Map<?, ?> arguments) {
             Object container = arguments.get("container");
-            if (!(container instanceof String)) {
-                throw new IllegalArgumentException("container is required");
+            if (container != null && !(container instanceof String)) {
+                throw new IllegalArgumentException("container must be a string");
+            }
+            Object label = arguments.get("label");
+            if (label != null && !(label instanceof Map<?, ?>)) {
+                throw new IllegalArgumentException("label must be a key/value map");
             }
             Object environment = arguments.get("environment");
             if (environment != null && !(environment instanceof List<?>)) {
@@ -69,7 +73,8 @@ public final class ConnectToDockerContainerGlobalVariable extends GlobalVariable
                     names.add((String) value);
                 }
             }
-            return handle(new DockerContext((String) container, names));
+            return handle(
+                    new DockerContext((String) container, DockerContext.normalizeLabel((Map<?, ?>) label), names));
         }
 
         private Map<String, CpsClosure2> handle(DockerContext docker) {
@@ -113,6 +118,9 @@ public final class ConnectToDockerContainerGlobalVariable extends GlobalVariable
             throw new IllegalArgumentException("Expected a command string or option map");
         }
         arguments.put("container", docker.container());
+        if (!docker.label().isEmpty()) {
+            arguments.put("label", docker.label());
+        }
         arguments.put("environment", docker.environment());
         arguments.put("mode", mode);
         return arguments;

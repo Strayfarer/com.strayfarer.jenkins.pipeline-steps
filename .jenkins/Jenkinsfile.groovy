@@ -141,6 +141,23 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
                 }
             }
 
+            catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                stage('Docker container label selectors') {
+                    withTestDockerContainer { firstId ->
+                        withTestDockerContainer { secondId ->
+                            def sidecar = connectToDockerContainer(label: ['net.slothsoft.test': 'pipeline-steps'])
+                            sidecar.exec 'echo label-connected-exec-ok'
+                            assertValue(sidecar.execStatus('exit 8'), 8, 'label-connected execStatus')
+                            assertValue(sidecar.execStdout('echo label-connected-stdout-ok'),
+                                'label-connected-stdout-ok', 'label-connected execStdout')
+                            insideDockerContainer(label: ['net.slothsoft.test': 'pipeline-steps']) {
+                                exec 'echo label-scoped-exec-ok'
+                            }
+                        }
+                    }
+                }
+            }
+
             stage('Deferred Docker container validation') {
                 def missing = connectToDockerContainer('pipeline-steps-missing-container')
                 insideDockerContainer('pipeline-steps-missing-container') {
@@ -152,6 +169,17 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
                 } catch (hudson.AbortException expected) {
                     assertValue(expected.message.contains('does not exist or cannot be inspected'),
                         true, 'missing container fails at command execution')
+                }
+                def missingLabel = connectToDockerContainer(label: ['net.slothsoft.test': 'pipeline-steps-missing'])
+                insideDockerContainer(label: ['net.slothsoft.test': 'pipeline-steps-missing']) {
+                    echo 'Missing label scope entered without inspection'
+                }
+                try {
+                    missingLabel.exec 'echo unexpected'
+                    error 'Missing label command unexpectedly succeeded'
+                } catch (hudson.AbortException expected) {
+                    assertValue(expected.message.contains('No running Docker container has label'),
+                        true, 'missing label fails at command execution')
                 }
             }
 

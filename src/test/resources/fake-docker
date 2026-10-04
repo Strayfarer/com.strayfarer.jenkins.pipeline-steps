@@ -11,6 +11,19 @@ done
 printf '\n' >> "$log"
 
 case "$1" in
+    ps)
+        for filter do :; done
+        case "$filter" in
+            'label=net.slothsoft.role=missing') ;;
+            'label=net.slothsoft.role=multiple') printf 'label-first\nlabel-second\n' ;;
+            'label=net.slothsoft.role=replacement')
+                count=$(grep -c 'label=net.slothsoft.role=replacement' "$log")
+                if [ "$count" -eq 1 ]; then printf 'label-first\n'; else printf 'label-second\n'; fi
+                ;;
+            'label=net.slothsoft.role=unity-sidecar') printf 'label-first\n' ;;
+            *) exit 1 ;;
+        esac
+        ;;
     inspect)
         for container do :; done
         case "$container" in

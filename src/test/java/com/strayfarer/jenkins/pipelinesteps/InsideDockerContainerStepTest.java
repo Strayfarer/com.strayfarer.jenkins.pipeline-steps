@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermission;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import org.jenkinsci.plugins.workflow.cps.CpsFlowDefinition;
 import org.jenkinsci.plugins.workflow.job.WorkflowJob;
@@ -159,6 +160,78 @@ class InsideDockerContainerStepTest {
     }
 
     @Test
+    void labelSelectorsChooseAnyRunningMatchForBothDockerHelpers() throws Throwable {
+        sessions.then(j -> {
+            Path log = installFakeDocker(j);
+            WorkflowRun run = build(j, """
+                    node {
+                        def sidecar = connectToDockerContainer(
+                            label: ['net.slothsoft.role': 'multiple'], environment: ['FORWARDED_VALUE'])
+                        env.FORWARDED_VALUE = 'label-value'
+                        sidecar.exec 'echo label-handle-exec'
+                        assert sidecar.execStatus('exit 6') == 6
+                        assert sidecar.execStdout('echo label-handle-stdout') == 'label-handle-stdout'
+                        insideDockerContainer(label: ['net.slothsoft.role': 'multiple']) {
+                            exec 'echo label-scope-exec'
+                        }
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            assertEquals(
+                    List.of("label-first", "label-first", "label-first", "label-first"),
+                    executions(Files.readAllLines(log)));
+            assertEquals(4, countSelections(Files.readAllLines(log), "label=net.slothsoft.role=multiple"));
+            assertTrue(Files.readString(log).contains("ENV|FORWARDED_VALUE|label-value"));
+        });
+    }
+
+    @Test
+    void labelSelectorsResolveAgainForEachCommand() throws Throwable {
+        sessions.then(j -> {
+            Path log = installFakeDocker(j);
+            WorkflowRun run = build(j, """
+                    node {
+                        def sidecar = connectToDockerContainer(label: ['net.slothsoft.role': 'replacement'])
+                        sidecar.exec 'echo first-task'
+                        sidecar.exec 'echo replacement-task'
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            assertEquals(List.of("label-first", "label-second"), executions(Files.readAllLines(log)));
+            assertEquals(2, countSelections(Files.readAllLines(log), "label=net.slothsoft.role=replacement"));
+        });
+    }
+
+    @Test
+    void missingLabelFailsOnlyWhenExecutingAContainerCommand() throws Throwable {
+        sessions.then(j -> {
+            Path log = installFakeDocker(j);
+            WorkflowRun run = build(j, """
+                    node {
+                        def sidecar = connectToDockerContainer(label: ['net.slothsoft.role': 'missing'])
+                        insideDockerContainer(label: ['net.slothsoft.role': 'missing']) {
+                            echo 'label-scope-entered'
+                        }
+                        try {
+                            sidecar.exec 'echo should-not-run'
+                            error 'missing label command unexpectedly succeeded'
+                        } catch (hudson.AbortException expected) {
+                            echo "label-error=${expected.message}"
+                        }
+                    }
+                    """);
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("label-scope-entered", run);
+            j.assertLogContains("No running Docker container has label 'net.slothsoft.role=missing'", run);
+            assertEquals(1, countSelections(Files.readAllLines(log), "label=net.slothsoft.role=missing"));
+            assertEquals(List.of(), executions(Files.readAllLines(log)));
+        });
+    }
+
+    @Test
     void connectedContainerHandleSurvivesAControllerRestart() throws Throwable {
         sessions.then(j -> {
             installFakeDocker(j);
@@ -186,6 +259,37 @@ class InsideDockerContainerStepTest {
             j.assertLogContains("connected-after", run);
             j.assertLogContains("connected-output=true", run);
             j.assertLogContains("connected-later", run);
+        });
+    }
+
+    @Test
+    void labelBackedHandleSurvivesAControllerRestart() throws Throwable {
+        sessions.then(j -> {
+            installFakeDocker(j);
+            String command = Functions.isWindows()
+                    ? "Write-Output 'label-before'; Start-Sleep -Seconds 8; Write-Output 'label-after'"
+                    : "echo label-before; sleep 8; echo label-after";
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "label-restart");
+            job.setDefinition(new CpsFlowDefinition("""
+                    node {
+                        def sidecar = connectToDockerContainer(label: ['net.slothsoft.role': 'unity-sidecar'])
+                        def output = sidecar.execStdout "%s"
+                        echo "label-output=${output.contains('label-after')}"
+                        sidecar.exec 'echo label-later'
+                    }
+                    """.formatted(command), true));
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
+            j.waitForMessage("label-before", run);
+        });
+        sessions.then(j -> {
+            WorkflowJob job = j.jenkins.getItemByFullName("label-restart", WorkflowJob.class);
+            assertNotNull(job);
+            WorkflowRun run = j.waitForCompletion(requireNonNull(job.getLastBuild()));
+
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("label-after", run);
+            j.assertLogContains("label-output=true", run);
+            j.assertLogContains("label-later", run);
         });
     }
 
@@ -286,6 +390,16 @@ class InsideDockerContainerStepTest {
         DockerContext context = new DockerContext("ready", List.of("VALUE"));
         assertEquals("ready", context.container());
         assertEquals("linux", DockerContext.osFromInspection("ready", "0\ntrue linux\n"));
+        assertEquals(
+                "net.slothsoft.role=unity-sidecar",
+                new DockerContext(null, Map.of("net.slothsoft.role", "unity-sidecar"), List.of()).labelFilter());
+        assertThrows(IllegalArgumentException.class, () -> new DockerContext(null, Map.of(), List.of()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new DockerContext("named", Map.of("net.slothsoft.role", "unity-sidecar"), List.of()));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> DockerContext.normalizeLabel(Map.of("first", "one", "second", "two")));
     }
 
     @Test
@@ -349,6 +463,12 @@ class InsideDockerContainerStepTest {
     private static int countInspections(List<String> lines, String suffix) {
         return (int) lines.stream()
                 .filter(line -> line.startsWith("ARGS|inspect") && line.endsWith(suffix))
+                .count();
+    }
+
+    private static int countSelections(List<String> lines, String filter) {
+        return (int) lines.stream()
+                .filter(line -> line.startsWith("ARGS|ps|") && line.endsWith(filter))
                 .count();
     }
 

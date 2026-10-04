@@ -100,13 +100,20 @@ abstract class AbstractCommandStep extends Step {
         public boolean start() throws Exception {
             StepContext context = getContext();
             Launcher launcher = context.get(Launcher.class);
-            String inspectionScript = launcher.isUnix()
-                    ? "output=$(docker inspect --type container --format '{{.State.Running}} {{.Platform}}' -- \"$PIPELINE_INTERNAL_DOCKER_INSPECT_CONTAINER\")\nstatus=$?\nprintf '%s\\n%s\\n' \"$status\" \"$output\"\nexit 0"
-                    : "$output = & docker inspect --type container --format '{{.State.Running}} {{.Platform}}' -- $env:PIPELINE_INTERNAL_DOCKER_INSPECT_CONTAINER\r\n$status = $LASTEXITCODE\r\nWrite-Output $status\r\n$output\r\nexit 0";
+            String inspectionScript = docker.label().isEmpty()
+                    ? (launcher.isUnix()
+                            ? "output=$(docker inspect --type container --format '{{.State.Running}} {{.Platform}}' -- \"$PIPELINE_INTERNAL_DOCKER_INSPECT_CONTAINER\")\nstatus=$?\nprintf '%s\\n%s\\n' \"$status\" \"$output\"\nexit 0"
+                            : "$output = & docker inspect --type container --format '{{.State.Running}} {{.Platform}}' -- $env:PIPELINE_INTERNAL_DOCKER_INSPECT_CONTAINER\r\n$status = $LASTEXITCODE\r\nWrite-Output $status\r\n$output\r\nexit 0")
+                    : (launcher.isUnix()
+                            ? "ids=$(docker ps --no-trunc --quiet --filter \"label=$PIPELINE_INTERNAL_DOCKER_LABEL\")\nstatus=$?\nif [ \"$status\" -ne 0 ]; then printf 'list-error\\n'; exit 0; fi\nset -- $ids\nif [ \"$#\" -eq 0 ]; then printf 'missing\\n'; exit 0; fi\nid=$1\noutput=$(docker inspect --type container --format '{{.State.Running}} {{.Platform}}' -- \"$id\")\nstatus=$?\nprintf '%s\\n%s\\n%s\\n' \"$id\" \"$status\" \"$output\"\nexit 0"
+                            : "$ids = @(& docker ps --no-trunc --quiet --filter \"label=$env:PIPELINE_INTERNAL_DOCKER_LABEL\")\r\nif ($LASTEXITCODE -ne 0) { Write-Output 'list-error'; exit 0 }\r\nif ($ids.Count -eq 0) { Write-Output 'missing'; exit 0 }\r\n$id = [string]$ids[0]\r\n$output = & docker inspect --type container --format '{{.State.Running}} {{.Platform}}' -- $id\r\n$status = $LASTEXITCODE\r\nWrite-Output $id\r\nWrite-Output $status\r\n$output\r\nexit 0");
             DurableTask inspection = CommandTaskFactory.nativeTask(
                     inspectionScript, context.get(FilePath.class), launcher, context.get(EnvVars.class), false);
             inspection = new EnvironmentOverlayDurableTask(
-                    inspection, Map.of("PIPELINE_INTERNAL_DOCKER_INSPECT_CONTAINER", docker.container()));
+                    inspection,
+                    docker.label().isEmpty()
+                            ? Map.of("PIPELINE_INTERNAL_DOCKER_INSPECT_CONTAINER", docker.container())
+                            : Map.of("PIPELINE_INTERNAL_DOCKER_LABEL", docker.labelFilter()));
             DurableTaskStepAdapter inspectionStep = new DurableTaskStepAdapter(inspection);
             inspectionStep.setEncoding("UTF-8");
             inspectionStep.setReturnStdout(true);
@@ -116,8 +123,26 @@ abstract class AbstractCommandStep extends Step {
         }
 
         private void startCommand(String inspectionOutput) throws Exception {
-            String os = DockerContext.osFromInspection(docker.container(), inspectionOutput);
-            active = commandExecution(getContext(), script, encoding, mode, docker, os);
+            DockerContext selected = docker;
+            if (!docker.label().isEmpty()) {
+                String[] lines = inspectionOutput.strip().split("\\R", 2);
+                if ("list-error".equals(lines[0])) {
+                    throw new hudson.AbortException(
+                            "Could not list Docker containers with label '" + docker.labelFilter() + "'");
+                }
+                if ("missing".equals(lines[0])) {
+                    throw new hudson.AbortException(
+                            "No running Docker container has label '" + docker.labelFilter() + "'");
+                }
+                if (lines.length < 2 || lines[0].isBlank()) {
+                    throw new hudson.AbortException(
+                            "Docker returned invalid selection data for label '" + docker.labelFilter() + "'");
+                }
+                selected = new DockerContext(lines[0], docker.environment());
+                inspectionOutput = lines[1];
+            }
+            String os = DockerContext.osFromInspection(selected.container(), inspectionOutput);
+            active = commandExecution(getContext(), script, encoding, mode, selected, os);
             active.start();
         }
 
