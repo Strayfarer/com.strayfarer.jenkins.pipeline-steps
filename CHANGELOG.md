@@ -8,6 +8,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
+## 0.9.0 - 2026-10-31
+
+### Added
+
+- Add optional `stdout` and `stderr` file paths to `exec`, `execStatus`, and
+  `execStdout`, including Docker scopes and connected-container handles.
+- Stream output to the selected files while commands run, create parent
+  directories recursively, preserve whitespace, and combine shared destinations
+  in console order. Existing return values and exit-code behavior are unchanged.
+
+
 ## 0.8.0 - 2026-10-04
 
 ### Added
