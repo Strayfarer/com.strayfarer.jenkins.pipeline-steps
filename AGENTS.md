@@ -126,7 +126,7 @@ When release operations are authorized, the complete release cycle is:
    the final version in the installed JPI manifest, and check startup logs for plugin-load failures.
 13. Run this plugin's job in `https://ci.slothsoft.net/job/jenkins/` and watch its complete console log.
 14. If any post-push check or final integration test fails, fix the issue and
-    repeat the full cycle from step 1 with a new patch version.
+    repeat the full cycle from step 1, incrementing the target version if it has already been tagged.
 
 ## General
 
