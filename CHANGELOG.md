@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 
-## 0.9.1 - 2026-10-31
+## 0.9.0 - 2026-10-31
 
 ### Added
 
@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stream output to the selected files while commands run, create parent
   directories recursively, preserve whitespace, and combine shared destinations
   in console order. Existing return values and exit-code behavior are unchanged.
+
+### Fixed
+
+- Prevent lost console output when capturing stdout on Linux by using a single
+  writer for the durable console log.
 
 
 ## 0.8.0 - 2026-10-04
