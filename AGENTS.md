@@ -59,12 +59,18 @@ cannot faithfully reproduce every Jenkins CPS, durability, agent, and plugin
 integration behavior. Whenever integration tests are run, watch the complete
 console log; scheduling a build alone does not establish success.
 
-The durable test servers are `Mörkö`, a Linux server that also hosts the
-Jenkins container; `Garl`, a Linux server with a GPU; and `Dende`, a Windows
-server with a GPU. Other Jenkins agents are temporary build helpers: do not
-mention them by name in `.jenkins/Jenkinsfile.groovy`. Target helpers only by
-label, and require an available helper matching a tested label to pass the same
-integration tests as the named servers.
+Select Jenkins nodes by label, never by hardcoded node name. The only node
+availability assumptions allowed in `.jenkins/Jenkinsfile.groovy` are at least
+one node matching `linux && server` and at least one matching
+`windows && server`. Run the full integration suite exactly once on one node
+matching each expression, letting Jenkins choose the concrete nodes.
+
+Smaller scheduling tests, especially tests of `everyNode`, may allocate
+additional server nodes dynamically. Do not assume their identities, count, or
+the availability of separate helper nodes. Tests of `everyNode` without a label
+may visit all online nodes to verify that invocation's contract, without
+assuming a particular node set. Use runtime values such as `env.NODE_NAME` when
+assertions need a concrete node identity.
 
 ## Jenkins Plugin Development
 
