@@ -33,7 +33,7 @@ final class CommandTaskFactory {
             String stderr)
             throws IOException, InterruptedException {
         if (launcher.isUnix()) {
-            if (stdout != null || stderr != null) {
+            if (teeStdout || stdout != null || stderr != null) {
                 return OutputFileTaskFactory.task(script, workspace, true, null, teeStdout, encoding, stdout, stderr);
             }
             return task(script, workspace, true, null, teeStdout);
@@ -51,7 +51,11 @@ final class CommandTaskFactory {
         return task(script, workspace, false, shell, teeStdout);
     }
 
-    static DurableTask task(String script, FilePath workspace, boolean unix, String windowsShell, boolean teeStdout) {
+    static DurableTask task(String script, FilePath workspace, boolean unix, String windowsShell, boolean teeStdout)
+            throws IOException, InterruptedException {
+        if (unix && teeStdout) {
+            return OutputFileTaskFactory.task(script, workspace, true, null, true, "UTF-8", null, null);
+        }
         if (!teeStdout) {
             if (unix) {
                 return new BourneShellScript("#!/bin/sh\n" + script);
@@ -65,18 +69,9 @@ final class CommandTaskFactory {
         String captureFile = temporaryDirectory
                 .child(".pipeline-exec-stdout-" + UUID.randomUUID())
                 .getRemote();
-        DurableTask task;
-        if (unix) {
-            String statusFile = temporaryDirectory
-                    .child(".pipeline-exec-status-" + UUID.randomUUID())
-                    .getRemote();
-            task = new BourneShellScript(teeUnixStdout(script, captureFile, statusFile));
-        } else {
-            PowershellScript powershellScript = new PowershellScript(teePowerShellStdout(script, captureFile));
-            powershellScript.setPowershellBinary(windowsShell);
-            task = powershellScript;
-        }
-        return new CapturedOutputDurableTask(task, captureFile, unix ? null : StandardCharsets.UTF_8);
+        PowershellScript powershellScript = new PowershellScript(teePowerShellStdout(script, captureFile));
+        powershellScript.setPowershellBinary(windowsShell);
+        return new CapturedOutputDurableTask(powershellScript, captureFile, StandardCharsets.UTF_8);
     }
 
     static String selectWindowsShell(Predicate<String> available) {
@@ -92,29 +87,6 @@ final class CommandTaskFactory {
                         .stderr(OutputStream.nullOutputStream())
                         .join()
                 == 0;
-    }
-
-    private static String teeUnixStdout(String script, String captureFile, String statusFile) {
-        String delimiter = heredocDelimiter(script);
-        return "#!/bin/sh\n"
-                + "status_file="
-                + quotePosix(statusFile)
-                + "\n"
-                + "trap 'rm -f \"$status_file\"' EXIT HUP INT TERM\n"
-                + "{\n"
-                + "/bin/sh <<'"
-                + delimiter
-                + "'\n"
-                + script
-                + "\n"
-                + delimiter
-                + "\n"
-                + "printf '%s\\n' \"$?\" > \"$status_file\"\n"
-                + "} | tee "
-                + quotePosix(captureFile)
-                + "\n"
-                + "status=$(cat \"$status_file\")\n"
-                + "exit \"$status\"\n";
     }
 
     private static String teePowerShellStdout(String script, String captureFile) {
@@ -136,18 +108,6 @@ final class CommandTaskFactory {
                 + "} finally {\r\n"
                 + "    $pipelineWriter.Dispose()\r\n"
                 + "}\r\n";
-    }
-
-    private static String heredocDelimiter(String script) {
-        String delimiter;
-        do {
-            delimiter = "PIPELINE_EXEC_" + UUID.randomUUID().toString().replace("-", "");
-        } while (script.contains(delimiter));
-        return delimiter;
-    }
-
-    private static String quotePosix(String value) {
-        return "'" + value.replace("'", "'\"'\"'") + "'";
     }
 
     private static String quotePowerShell(String value) {

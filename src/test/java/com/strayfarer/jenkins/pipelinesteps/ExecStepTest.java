@@ -187,7 +187,7 @@ class ExecStepTest {
     }
 
     @Test
-    void selectsTheNativeShellWithoutShellTracing() {
+    void selectsTheNativeShellWithoutShellTracing() throws Exception {
         ExecStep step = new ExecStep("echo hello");
 
         FilePath workspace = new FilePath(new java.io.File("workspace"));

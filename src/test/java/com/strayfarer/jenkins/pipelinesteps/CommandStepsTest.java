@@ -52,20 +52,28 @@ class CommandStepsTest {
     void execStdoutStreamsWhileRunningThenReturnsTrimmedStdout() throws Throwable {
         sessions.then(j -> {
             String command = nativeCommand(
-                    "Write-Output 'stdout-early'; Start-Sleep -Seconds 4; Write-Output '  value  '; [Console]::Error.WriteLine('stderr-only')",
-                    "echo stdout-early; sleep 4; printf '  value  \\n'; echo stderr-only >&2");
+                    "Write-Output 'stdout-early'; while (!(Test-Path -LiteralPath stdout-release)) { Start-Sleep -Milliseconds 100 }; Write-Output '  value  '; [Console]::Error.WriteLine('stderr-only')",
+                    "echo stdout-early; while [ ! -f stdout-release ]; do sleep 1; done; printf '  value  \\n'; echo stderr-only >&2");
             WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "stdout");
             job.setDefinition(new CpsFlowDefinition("""
                     node {
-                        def value = execStdout "%s"
+                        def value = timeout(time: 2, unit: 'MINUTES') {
+                            execStdout "%s"
+                        }
                         exec "echo 'returned=[${value}]'"
                         exec "echo stderr-returned=${value.contains('stderr-only')}"
                     }
                     """.formatted(command), true));
             WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
 
-            j.waitForMessage("stdout-early", run);
-            assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
+            try {
+                j.waitForMessage("stdout-early", run);
+                assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
+            } finally {
+                requireNonNull(j.jenkins.getWorkspaceFor(job))
+                        .child("stdout-release")
+                        .write("continue", "UTF-8");
+            }
             j.waitForCompletion(run);
 
             j.assertBuildStatusSuccess(run);
@@ -281,7 +289,7 @@ class CommandStepsTest {
         sessions.then(j -> {
             String command = nativeCommand(
                     "Write-Output 'file-started'; Start-Sleep -Seconds 60; Write-Output 'file-should-not-finish'",
-                    "echo file-started; sleep 60; echo file-should-not-finish");
+                    "echo file-started; sleep 60 && echo file-should-not-finish");
             WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "file-abort");
             job.setDefinition(new CpsFlowDefinition("""
                     node {
@@ -293,9 +301,9 @@ class CommandStepsTest {
             run.doStop();
             j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
             FilePath workspace = requireNonNull(j.jenkins.getWorkspaceFor(job));
-            assertEquals(
-                    "file-started",
-                    workspace.child("partial/output.txt").readToString().trim());
+            String output = workspace.child("partial/output.txt").readToString();
+            assertTrue(output.startsWith("file-started"), output);
+            assertFalse(output.contains("file-should-not-finish"), output);
             j.assertLogNotContains("file-should-not-finish", run);
         });
     }

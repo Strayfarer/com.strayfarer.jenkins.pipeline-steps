@@ -114,23 +114,19 @@ final class OutputFileTaskFactory {
         result.append("tmp=").append(posix(temporary)).append("\ntrap 'rm -rf -- \"$tmp\"' EXIT\n");
         result.append("output_failed() { : > ").append(posix(failure)).append("; status=125; }\n");
         String outPipe = temporary + "/stdout";
-        String errPipe = combined ? temporary + "/combined" : temporary + "/stderr";
-        String stdoutRedirect = "";
-        String stderrRedirect = "";
+        String errPipe = temporary + "/stderr";
+        String consolePipe = temporary + "/console";
+        String stdoutRedirect = " > " + posix(consolePipe);
+        String stderrRedirect = " 2> " + posix(consolePipe);
         String waits = "";
+        // Stream-specific tees write FIFOs; only this collector writes to the durable console log.
+        result.append("mkfifo ").append(posix(consolePipe)).append(" || { output_failed; exit 125; }\n");
         if (combined) {
-            result.append("mkfifo ").append(posix(errPipe)).append(" || { output_failed; exit 125; }\n");
-            result.append("tee ")
-                    .append(posix(stdout))
-                    .append(" < ")
-                    .append(posix(errPipe))
-                    .append(" &\nmerged_pid=$!\n");
-            stderrRedirect = " 2> " + posix(errPipe);
-            waits += "wait \"$merged_pid\" || output_failed\n";
-            if (capture == null) {
-                stdoutRedirect = " > " + posix(errPipe);
-            }
+            result.append("tee ").append(posix(stdout));
+        } else {
+            result.append("cat");
         }
+        result.append(" < ").append(posix(consolePipe)).append(" &\nmerged_pid=$!\n");
         if (capture != null || (stdout != null && !combined)) {
             result.append("mkfifo ").append(posix(outPipe)).append(" || { output_failed; exit 125; }\ntee");
             if (capture != null) {
@@ -140,9 +136,7 @@ final class OutputFileTaskFactory {
                 result.append(' ').append(posix(stdout));
             }
             result.append(" < ").append(posix(outPipe));
-            if (combined) {
-                result.append(" > ").append(posix(errPipe));
-            }
+            result.append(" > ").append(posix(consolePipe)).append(" 2> ").append(posix(consolePipe));
             result.append(" &\nout_pid=$!\n");
             stdoutRedirect = " > " + posix(outPipe);
             waits = "wait \"$out_pid\" || output_failed\n" + waits;
@@ -154,7 +148,11 @@ final class OutputFileTaskFactory {
                     .append(posix(stderr))
                     .append(" < ")
                     .append(posix(errPipe))
-                    .append(" >&2 &\nerr_pid=$!\n");
+                    .append(" > ")
+                    .append(posix(consolePipe))
+                    .append(" 2> ")
+                    .append(posix(consolePipe))
+                    .append(" &\nerr_pid=$!\n");
             stderrRedirect = " 2> " + posix(errPipe);
             waits += "wait \"$err_pid\" || output_failed\n";
         }
@@ -170,6 +168,7 @@ final class OutputFileTaskFactory {
                 .append(delimiter)
                 .append("\nstatus=$?\n")
                 .append(waits)
+                .append("wait \"$merged_pid\" || output_failed\n")
                 .append("exit \"$status\"\n");
         return result.toString();
     }
