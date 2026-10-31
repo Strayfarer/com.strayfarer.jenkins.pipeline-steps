@@ -10,6 +10,7 @@ import hudson.FilePath;
 import hudson.Functions;
 import hudson.model.Result;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.jenkinsci.plugins.structs.describable.DescribableModel;
 import org.jenkinsci.plugins.structs.describable.DescribableParameter;
@@ -185,13 +186,15 @@ class CommandStepsTest {
     void outputFilesStreamBeforeCompletionAndPreserveWhitespaceOnNonzeroExit() throws Throwable {
         sessions.then(j -> {
             String command = nativeCommand(
-                    "[Console]::Out.Write('  early-out  '); [Console]::Error.Write('  early-err  '); Start-Sleep -Seconds 8; exit 7",
-                    "printf '  early-out  '; printf '  early-err  ' >&2; sleep 8; exit 7");
+                    "[Console]::Out.Write('  early-out  '); [Console]::Error.Write('  early-err  '); while (!(Test-Path -LiteralPath release)) { Start-Sleep -Milliseconds 100 }; exit 7",
+                    "printf '  early-out  '; printf '  early-err  ' >&2; while [ ! -f release ]; do sleep 1; done; exit 7");
             WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "output-files");
             job.setDefinition(new CpsFlowDefinition("""
                     node {
                         dir('repository') {
-                            def status = execStatus(script: "%s", stdout: "nested dir/it's output.txt", stderr: 'other/deep/error.txt')
+                            def status = timeout(time: 2, unit: 'MINUTES') {
+                                execStatus(script: "%s", stdout: "nested dir/it's output.txt", stderr: 'other/deep/error.txt')
+                            }
                             assert status == 7
                             assert readFile("nested dir/it's output.txt") == '  early-out  '
                             assert readFile('other/deep/error.txt') == '  early-err  '
@@ -199,16 +202,18 @@ class CommandStepsTest {
                     }
                     """.formatted(command), true));
             WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
-            j.waitForMessage("early-out", run);
-            j.waitForMessage("early-err", run);
-            assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
             FilePath workspace = requireNonNull(j.jenkins.getWorkspaceFor(job)).child("repository");
-            assertEquals(
-                    "  early-out  ",
-                    workspace.child("nested dir/it's output.txt").readToString());
-            assertEquals(
-                    "  early-err  ", workspace.child("other/deep/error.txt").readToString());
+            // Console log readers can withhold partial lines until the command finishes.
+            try {
+                waitForFileOutput(workspace.child("nested dir/it's output.txt"), "  early-out  ");
+                waitForFileOutput(workspace.child("other/deep/error.txt"), "  early-err  ");
+                assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
+            } finally {
+                workspace.child("release").write("continue", "UTF-8");
+            }
             j.assertBuildStatusSuccess(j.waitForCompletion(run));
+            j.assertLogContains("early-out", run);
+            j.assertLogContains("early-err", run);
         });
     }
 
@@ -359,6 +364,18 @@ class CommandStepsTest {
     private static Set<String> parameters(Class<?> type) {
         return new DescribableModel<>(type)
                 .getParameters().stream().map(DescribableParameter::getName).collect(Collectors.toSet());
+    }
+
+    private static void waitForFileOutput(FilePath file, String expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        while (System.nanoTime() < deadline) {
+            if (file.exists() && expected.equals(file.readToString())) {
+                return;
+            }
+            Thread.sleep(100);
+        }
+        assertTrue(file.exists(), "Output file was not created: " + file);
+        assertEquals(expected, file.readToString(), "Output was not streamed before command completion");
     }
 
     private static WorkflowRun build(JenkinsRule j, String script) throws Exception {
