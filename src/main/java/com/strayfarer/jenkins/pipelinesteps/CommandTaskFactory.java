@@ -18,8 +18,24 @@ final class CommandTaskFactory {
 
     static DurableTask nativeTask(
             String script, FilePath workspace, Launcher launcher, EnvVars environment, boolean teeStdout)
-            throws InterruptedException {
+            throws IOException, InterruptedException {
+        return nativeTask(script, workspace, launcher, environment, teeStdout, "UTF-8", null, null);
+    }
+
+    static DurableTask nativeTask(
+            String script,
+            FilePath workspace,
+            Launcher launcher,
+            EnvVars environment,
+            boolean teeStdout,
+            String encoding,
+            String stdout,
+            String stderr)
+            throws IOException, InterruptedException {
         if (launcher.isUnix()) {
+            if (stdout != null || stderr != null) {
+                return OutputFileTaskFactory.task(script, workspace, true, null, teeStdout, encoding, stdout, stderr);
+            }
             return task(script, workspace, true, null, teeStdout);
         }
         boolean pwshAvailable;
@@ -29,6 +45,9 @@ final class CommandTaskFactory {
             pwshAvailable = false;
         }
         String shell = pwshAvailable ? "pwsh" : "powershell";
+        if (stdout != null || stderr != null) {
+            return OutputFileTaskFactory.task(script, workspace, false, shell, teeStdout, encoding, stdout, stderr);
+        }
         return task(script, workspace, false, shell, teeStdout);
     }
 

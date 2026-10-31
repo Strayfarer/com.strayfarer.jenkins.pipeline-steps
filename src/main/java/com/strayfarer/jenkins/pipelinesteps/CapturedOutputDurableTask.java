@@ -23,17 +23,31 @@ final class CapturedOutputDurableTask extends DurableTask {
     private final DurableTask delegate;
     private final String captureFile;
     private final String fixedCaptureCharset;
+    private final String outputFailureFile;
     private String captureCharset = StandardCharsets.UTF_8.name();
 
+    String outputFailureFile() {
+        return outputFailureFile;
+    }
+
     CapturedOutputDurableTask(DurableTask delegate, String captureFile, Charset fixedCaptureCharset) {
+        this(delegate, captureFile, fixedCaptureCharset, null);
+    }
+
+    CapturedOutputDurableTask(
+            DurableTask delegate, String captureFile, Charset fixedCaptureCharset, String outputFailureFile) {
         this.delegate = delegate;
         this.captureFile = captureFile;
         this.fixedCaptureCharset = fixedCaptureCharset == null ? null : fixedCaptureCharset.name();
+        this.outputFailureFile = outputFailureFile;
     }
 
     @Override
     public void captureOutput() {
         // The command wrapper captures stdout while the delegate continues streaming it.
+        if (captureFile == null) {
+            delegate.captureOutput();
+        }
     }
 
     @Override
@@ -55,11 +69,18 @@ final class CapturedOutputDurableTask extends DurableTask {
     @Override
     public Controller launch(EnvVars environment, FilePath workspace, Launcher launcher, TaskListener listener)
             throws IOException, InterruptedException {
-        FilePath output = WorkspaceTemporaryFiles.resolve(workspace, captureFile);
-        WorkspaceTemporaryFiles.prepare(output);
+        if (captureFile != null) {
+            WorkspaceTemporaryFiles.prepare(WorkspaceTemporaryFiles.resolve(workspace, captureFile));
+        }
+        if (outputFailureFile != null) {
+            WorkspaceTemporaryFiles.prepare(WorkspaceTemporaryFiles.resolve(workspace, outputFailureFile));
+        }
         String outputCharset = fixedCaptureCharset == null ? captureCharset : fixedCaptureCharset;
         return new CapturedOutputController(
-                delegate.launch(environment, workspace, launcher, listener), captureFile, outputCharset);
+                delegate.launch(environment, workspace, launcher, listener),
+                captureFile,
+                outputCharset,
+                outputFailureFile);
     }
 
     private static final class CapturedOutputController extends Controller {
@@ -70,11 +91,14 @@ final class CapturedOutputDurableTask extends DurableTask {
         private final Controller delegate;
         private final String captureFile;
         private final String captureCharset;
+        private final String outputFailureFile;
 
-        private CapturedOutputController(Controller delegate, String captureFile, String captureCharset) {
+        private CapturedOutputController(
+                Controller delegate, String captureFile, String captureCharset, String outputFailureFile) {
             this.delegate = delegate;
             this.captureFile = captureFile;
             this.captureCharset = captureCharset;
+            this.outputFailureFile = outputFailureFile;
         }
 
         @Override
@@ -91,6 +115,9 @@ final class CapturedOutputDurableTask extends DurableTask {
         @Override
         public @NonNull byte[] getOutput(@NonNull FilePath workspace, @NonNull Launcher launcher)
                 throws IOException, InterruptedException {
+            if (captureFile == null) {
+                return delegate.getOutput(workspace, launcher);
+            }
             FilePath output = WorkspaceTemporaryFiles.resolve(workspace, captureFile);
             if (!output.exists()) {
                 return new byte[0];
@@ -108,7 +135,13 @@ final class CapturedOutputDurableTask extends DurableTask {
             try {
                 delegate.cleanup(workspace);
             } finally {
-                WorkspaceTemporaryFiles.resolve(workspace, captureFile).delete();
+                if (captureFile != null) {
+                    WorkspaceTemporaryFiles.resolve(workspace, captureFile).delete();
+                }
+                if (outputFailureFile != null) {
+                    WorkspaceTemporaryFiles.resolve(workspace, outputFailureFile)
+                            .delete();
+                }
             }
         }
 

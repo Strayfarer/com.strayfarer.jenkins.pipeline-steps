@@ -4,6 +4,77 @@ def assertValue(actual, expected, description) {
     }
 }
 
+def testOutputFiles(Closure execute, Closure status, Closure capture) {
+    dir('command-output-files') {
+        assertValue(status(script: 'exit 7', stdout: '', stderr: null), 7, 'empty output path is unset')
+        assertValue(capture(script: 'echo empty-path-output', stdout: null, stderr: ''),
+            'empty-path-output', 'null output path is unset')
+        def outputCommand = isUnix()
+            ? "printf '  file-out  '; printf '  file-err  ' >&2; exit 7"
+            : "[Console]::Out.Write('  file-out  '); [Console]::Error.Write('  file-err  '); exit 7"
+        assertValue(status(script: outputCommand, stdout: 'nested/out.txt', stderr: 'other/deep/err.txt'),
+            7, 'file output preserves nonzero status')
+        assertValue(readFile('nested/out.txt'), '  file-out  ', 'stdout file preserves whitespace')
+        assertValue(readFile('other/deep/err.txt'), '  file-err  ', 'stderr file preserves whitespace')
+        def combinedCommand = isUnix()
+            ? "printf 'combined-out|'; printf 'combined-err|' >&2"
+            : "[Console]::Out.Write('combined-out|'); [Console]::Error.Write('combined-err|')"
+        writeFile(file: 'combined.txt', text: 'stale')
+        assertValue(capture(script: combinedCommand, stdout: 'combined.txt', stderr: './combined.txt'),
+            'combined-out|', 'combined file does not change stdout return')
+        def combined = readFile('combined.txt')
+        assertValue(combined.contains('combined-out|') && combined.contains('combined-err|') && !combined.contains('stale'),
+            true, 'shared file contains both streams and overwrites previous content')
+        execute(script: 'echo single-output', stdout: 'single.txt')
+        assertValue(readFile('single.txt').trim(), 'single-output', 'exec supports stdout file')
+        def failed = false
+        try {
+            execute(script: outputCommand, stdout: 'failed/out.txt', stderr: 'failed/err.txt')
+        } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+            throw e
+        } catch (hudson.AbortException e) {
+            failed = true
+        }
+        assertValue(failed, true, 'exec still fails on nonzero exit')
+        assertValue(readFile('failed/out.txt'), '  file-out  ', 'failed command retains stdout')
+        assertValue(readFile('failed/err.txt'), '  file-err  ', 'failed command retains stderr')
+        dir('existing-directory') {
+            writeFile(file: 'keep.txt', text: 'directory fixture')
+        }
+        def invalidDestination = false
+        try {
+            status(script: 'echo should-not-succeed', stdout: 'existing-directory')
+        } catch (org.jenkinsci.plugins.workflow.steps.FlowInterruptedException e) {
+            throw e
+        } catch (java.io.IOException expected) {
+            invalidDestination = true
+        }
+        assertValue(invalidDestination, true, 'directory output fails even with execStatus')
+
+        dir('streaming') {
+            deleteDir()
+            def streamingCommand = isUnix()
+                ? "printf 'early-out'; printf 'early-err' >&2; while [ ! -f release ]; do sleep 1; done; exit 7"
+                : "[Console]::Out.Write('early-out'); [Console]::Error.Write('early-err'); while (!(Test-Path -LiteralPath release)) { Start-Sleep -Milliseconds 100 }; exit 7"
+            timeout(time: 2, unit: 'MINUTES') {
+                parallel(
+                    writer: {
+                        assertValue(status(script: streamingCommand, stdout: 'out.txt', stderr: 'err.txt'),
+                            7, 'streamed command retains exit status')
+                    },
+                    reader: {
+                        waitUntil(initialRecurrencePeriod: 100, quiet: true) {
+                            fileExists('out.txt') && fileExists('err.txt') &&
+                                readFile('out.txt') == 'early-out' && readFile('err.txt') == 'early-err'
+                        }
+                        writeFile(file: 'release', text: 'output observed before process exit')
+                    }
+                )
+            }
+        }
+    }
+}
+
 def withTestDockerContainer(Closure body) {
     def agentContainer = execStdout('hostname')
     def image = 'faulo/compose-unity:latest'
@@ -24,7 +95,7 @@ def withTestDockerContainer(Closure body) {
     }
 }
 
-def testNodes = ['windows && server', 'linux && server']
+def testNodes = ['linux && server', 'windows && server']
 for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
     def testNode = testNodes[testIndex]
     stage("Agent: ${testNode}") {
@@ -41,6 +112,7 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
                 exec 'echo host-exec-ok'
                 assertValue(execStatus('exit 7'), 7, 'execStatus on host')
                 assertValue(execStdout('echo host-stdout-ok'), 'host-stdout-ok', 'execStdout on host')
+                testOutputFiles({ options -> exec(options) }, { options -> execStatus(options) }, { options -> execStdout(options) })
             }
 
             stage('Command bookkeeping') {
@@ -123,6 +195,7 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
                             assertValue(execStdout('echo container-stdout-ok'), 'container-stdout-ok', 'execStdout in container')
                             def files = execStdout bookkeepingCommand
                             assertValue(files, '', 'container command bookkeeping outside current directory')
+                            testOutputFiles({ options -> exec(options) }, { options -> execStatus(options) }, { options -> execStdout(options) })
                         }
                     }
                 }
@@ -137,6 +210,8 @@ for (int testIndex = 0; testIndex < testNodes.size(); testIndex++) {
                         assertValue(container.execStatus('exit 9'), 9, 'connected container execStatus')
                         assertValue(container.execStdout('echo connected-container-stdout-ok'),
                             'connected-container-stdout-ok', 'connected container execStdout')
+                        testOutputFiles({ options -> container.exec(options) }, { options -> container.execStatus(options) },
+                            { options -> container.execStdout(options) })
                     }
                 }
             }

@@ -183,7 +183,7 @@ class ExecStepTest {
 
         Set<String> parameters = new DescribableModel<>(ExecStep.class)
                 .getParameters().stream().map(DescribableParameter::getName).collect(Collectors.toSet());
-        assertEquals(Set.of("script", "echoScript", "encoding"), parameters);
+        assertEquals(Set.of("script", "echoScript", "encoding", "stdout", "stderr"), parameters);
     }
 
     @Test

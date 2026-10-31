@@ -6,7 +6,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import hudson.FilePath;
 import hudson.Functions;
+import hudson.model.Result;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.jenkinsci.plugins.structs.describable.DescribableModel;
@@ -105,7 +107,8 @@ class CommandStepsTest {
             WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "stdout-restart");
             job.setDefinition(new CpsFlowDefinition("""
                     node {
-                        def value = execStdout "%s"
+                        def value = execStdout(script: "%s", stdout: 'restart/output.txt', stderr: 'restart/output.txt')
+                        assert readFile('restart/output.txt').trim() == value
                         exec "echo returned-before=${value.contains('capture-before')}"
                         exec "echo returned-after=${value.contains('capture-after')}"
                     }
@@ -136,6 +139,9 @@ class CommandStepsTest {
                     node {
                         def value = execStdout script: "printf '\\\\334ber\\\\n'", encoding: 'ISO-8859-1'
                         echo "encoded=[${value}]"
+                        def fileValue = execStdout(script: "printf '\\\\334ber\\\\n'", encoding: 'ISO-8859-1', stdout: 'encoded/out.txt')
+                        assert fileValue == value
+                        assert readFile(file: 'encoded/out.txt', encoding: 'ISO-8859-1').trim() == value
                     }
                     """);
 
@@ -145,9 +151,25 @@ class CommandStepsTest {
     }
 
     @Test
+    void outputFilesPreserveUtf8AndSupportLongScripts() throws Throwable {
+        sessions.then(j -> {
+            WorkflowRun run = build(j, """
+                    node {
+                        def script = ('# long script padding\\n' * 3000) + "echo 'Grüße 🌍'"
+                        def value = execStdout(script: script, stdout: 'unicode/output.txt')
+                        assert value == 'Grüße 🌍'
+                        assert readFile(file: 'unicode/output.txt', encoding: 'UTF-8').trim() == value
+                    }
+                    """);
+            j.assertBuildStatusSuccess(run);
+        });
+    }
+
+    @Test
     void commandStepsExposeTheSameDocumentedOptions() {
-        assertEquals(Set.of("script", "echoScript", "encoding"), parameters(ExecStatusStep.class));
-        assertEquals(Set.of("script", "echoScript", "encoding"), parameters(ExecStdoutStep.class));
+        assertEquals(Set.of("script", "echoScript", "encoding", "stdout", "stderr"), parameters(ExecStep.class));
+        assertEquals(Set.of("script", "echoScript", "encoding", "stdout", "stderr"), parameters(ExecStatusStep.class));
+        assertEquals(Set.of("script", "echoScript", "encoding", "stdout", "stderr"), parameters(ExecStdoutStep.class));
 
         ExecStatusStep status = new ExecStatusStep("status-command");
         ExecStdoutStep stdout = new ExecStdoutStep("stdout-command");
@@ -157,6 +179,175 @@ class CommandStepsTest {
         assertEquals("UTF-8", stdout.getEncoding());
         assertFalse(status.isEchoScript());
         assertFalse(stdout.isEchoScript());
+    }
+
+    @Test
+    void outputFilesStreamBeforeCompletionAndPreserveWhitespaceOnNonzeroExit() throws Throwable {
+        sessions.then(j -> {
+            String command = nativeCommand(
+                    "[Console]::Out.Write('  early-out  '); [Console]::Error.Write('  early-err  '); Start-Sleep -Seconds 8; exit 7",
+                    "printf '  early-out  '; printf '  early-err  ' >&2; sleep 8; exit 7");
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "output-files");
+            job.setDefinition(new CpsFlowDefinition("""
+                    node {
+                        dir('repository') {
+                            def status = execStatus(script: "%s", stdout: "nested dir/it's output.txt", stderr: 'other/deep/error.txt')
+                            assert status == 7
+                            assert readFile("nested dir/it's output.txt") == '  early-out  '
+                            assert readFile('other/deep/error.txt') == '  early-err  '
+                        }
+                    }
+                    """.formatted(command), true));
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
+            j.waitForMessage("early-out", run);
+            j.waitForMessage("early-err", run);
+            assertTrue(run.isBuilding(), JenkinsRule.getLog(run));
+            FilePath workspace = requireNonNull(j.jenkins.getWorkspaceFor(job)).child("repository");
+            assertEquals(
+                    "  early-out  ",
+                    workspace.child("nested dir/it's output.txt").readToString());
+            assertEquals(
+                    "  early-err  ", workspace.child("other/deep/error.txt").readToString());
+            j.assertBuildStatusSuccess(j.waitForCompletion(run));
+        });
+    }
+
+    @Test
+    void sharedOutputFileMatchesConsoleAndStdoutReturnRemainsSeparate() throws Throwable {
+        sessions.then(j -> {
+            String command = nativeCommand(
+                    "[Console]::Out.Write('out-one|'); [Console]::Error.Write('err-one|'); [Console]::Out.Write('out-two|')",
+                    "printf 'out-one|'; printf 'err-one|' >&2; printf 'out-two|'");
+            WorkflowRun run = build(j, """
+                    node {
+                        writeFile(file: 'reports/combined.txt', text: 'stale')
+                        def value = execStdout(script: "%s", stdout: 'reports/combined.txt', stderr: 'reports/./combined.txt')
+                        assert value == 'out-one|out-two|'
+                        def combined = readFile('reports/combined.txt')
+                        assert combined.contains('out-one|') && combined.contains('out-two|') && combined.contains('err-one|')
+                        assert !combined.contains('stale')
+                        writeFile(file: 'console-comparison.txt', text: combined)
+                    }
+                    """.formatted(command));
+            j.assertBuildStatusSuccess(run);
+            FilePath workspace = requireNonNull(j.jenkins.getWorkspaceFor(run.getParent()));
+            assertTrue(
+                    JenkinsRule.getLog(run)
+                            .contains(workspace.child("console-comparison.txt").readToString()),
+                    JenkinsRule.getLog(run));
+        });
+    }
+
+    @Test
+    void execStillFailsAfterWritingBothFilesAndSingleStreamOptionsWork() throws Throwable {
+        sessions.then(j -> {
+            String command = nativeCommand(
+                    "Write-Output 'failure-out'; [Console]::Error.WriteLine('failure-err'); exit 9",
+                    "echo failure-out; echo failure-err >&2; exit 9");
+            WorkflowRun run = build(j, """
+                    node {
+                        try {
+                            exec(script: "%s", stdout: 'failed/out.txt', stderr: 'failed/err.txt')
+                        } finally {
+                            assert readFile('failed/out.txt').trim() == 'failure-out'
+                            assert readFile('failed/err.txt').trim() == 'failure-err'
+                        }
+                    }
+                    """.formatted(command));
+            j.assertBuildStatus(Result.FAILURE, run);
+            j.assertLogContains("script returned exit code 9", run);
+            WorkflowRun single = build(j, """
+                    node {
+                        exec(script: 'echo only-out', stdout: 'out.txt')
+                        assert readFile('out.txt').trim() == 'only-out'
+                        exec(script: 'echo captured', stderr: 'err.txt')
+                        assert readFile('err.txt') == ''
+                        def value = execStdout(script: 'echo returned', stderr: 'another/err.txt')
+                        assert value == 'returned'
+                        assert readFile('another/err.txt') == ''
+                    }
+                    """);
+            j.assertBuildStatusSuccess(single);
+        });
+    }
+
+    @Test
+    void abortStopsFileStreamingAndPreservesPartialOutput() throws Throwable {
+        sessions.then(j -> {
+            String command = nativeCommand(
+                    "Write-Output 'file-started'; Start-Sleep -Seconds 60; Write-Output 'file-should-not-finish'",
+                    "echo file-started; sleep 60; echo file-should-not-finish");
+            WorkflowJob job = j.jenkins.createProject(WorkflowJob.class, "file-abort");
+            job.setDefinition(new CpsFlowDefinition("""
+                    node {
+                        exec(script: "%s", stdout: 'partial/output.txt', stderr: 'partial/output.txt')
+                    }
+                    """.formatted(command), true));
+            WorkflowRun run = requireNonNull(job.scheduleBuild2(0)).waitForStart();
+            j.waitForMessage("file-started", run);
+            run.doStop();
+            j.assertBuildStatus(Result.ABORTED, j.waitForCompletion(run));
+            FilePath workspace = requireNonNull(j.jenkins.getWorkspaceFor(job));
+            assertEquals(
+                    "file-started",
+                    workspace.child("partial/output.txt").readToString().trim());
+            j.assertLogNotContains("file-should-not-finish", run);
+        });
+    }
+
+    @Test
+    void emptyOutputPathsBehaveLikeOmittedOptions() throws Throwable {
+        sessions.then(j -> {
+            WorkflowRun run = build(j, """
+                    node {
+                        exec(script: 'echo plain-output', stdout: '', stderr: '')
+                        assert execStatus(script: 'exit 7', stdout: null, stderr: '') == 7
+                        assert execStdout(script: 'echo captured-output', stdout: '', stderr: null) == 'captured-output'
+                    }
+                    """);
+            j.assertBuildStatusSuccess(run);
+            j.assertLogContains("plain-output", run);
+        });
+    }
+
+    @Test
+    void outputFileErrorsFailEvenWhenReturningExitStatus() throws Throwable {
+        sessions.then(j -> {
+            for (String stream : Set.of("stdout", "stderr")) {
+                WorkflowRun run = build(j, """
+                    node {
+                        dir('destination') {
+                            writeFile(file: 'keep.txt', text: 'existing directory')
+                        }
+                        def options = [script: 'echo output']
+                        options['%s'] = 'destination'
+                        execStatus(options)
+                        echo 'unexpectedly-continued'
+                    }
+                    """.formatted(stream));
+                j.assertBuildStatus(Result.FAILURE, run);
+                j.assertLogContains("Could not stream command output to the requested files", run);
+                j.assertLogNotContains("unexpectedly-continued", run);
+            }
+        });
+    }
+
+    @Test
+    void fileOptionsPreservePowerShellNonterminatingErrorBehavior() throws Throwable {
+        Assumptions.assumeTrue(Functions.isWindows());
+        sessions.then(j -> {
+            WorkflowRun run = build(j, """
+                    node {
+                        def command = "Write-Error 'nonterminating-error'; Write-Output 'after-error'"
+                        def original = execStatus(script: command)
+                        def withFiles = execStatus(script: command, stdout: 'errors/out.txt', stderr: 'errors/err.txt')
+                        assert withFiles == original
+                        assert readFile('errors/out.txt').trim() == 'after-error'
+                        assert readFile('errors/err.txt').contains('nonterminating-error')
+                    }
+                    """);
+            j.assertBuildStatusSuccess(run);
+        });
     }
 
     @Test

@@ -30,6 +30,10 @@ final class DockerProcessDurableTask extends DurableTask {
     private final String containerPidFile;
     private final String token;
 
+    String outputFailureFile() {
+        return delegate instanceof CapturedOutputDurableTask captured ? captured.outputFailureFile() : null;
+    }
+
     DockerProcessDurableTask(
             DurableTask delegate,
             String container,

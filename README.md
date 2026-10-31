@@ -73,6 +73,47 @@ supports these common options:
 | `script`     | `String`  | required | Command text passed to the selected shell.      |
 | `echoScript` | `boolean` | `false`  | Explicitly print the command before execution.  |
 | `encoding`   | `String`  | `UTF-8`  | Encoding used for command output.               |
+| `stdout`     | `String`  | unset    | Also stream stdout to this workspace file.      |
+| `stderr`     | `String`  | unset    | Also stream stderr to this workspace file.      |
+
+Omitting `stdout` or `stderr`, passing `null`, or passing an empty string leaves
+that stream without an output file. An existing directory is not a valid output
+file and fails the step, including `execStatus`.
+
+Output paths are relative to the current `pwd()` (absolute agent paths are also
+accepted, as with `writeFile`). Parent directories are created recursively.
+Each selected file is overwritten for the invocation, including when the command
+produces no output. Output is written while the command runs, independently of
+the Jenkins controller, and is retained when the command exits nonzero. Files
+preserve whitespace and use the command output encoding, which defaults to UTF-8.
+Console streaming and each step's return value and exit-code behavior are unchanged.
+Failure to write an output file fails the step, including `execStatus`.
+
+When `stdout` and `stderr` select the same file, their output is combined in the
+same order as the command output streamed to the console. The file contains
+command output, without Jenkins annotations, masking, or step messages. Use
+different files for concurrent commands; sharing a file across invocations does
+not coordinate their writes.
+
+For a tool whose report should determine the build result, use `execStatus`:
+
+```groovy
+execStatus(
+    script: 'php vendor/bin/phpstan analyse --no-progress --configuration=phpstan.neon.dist --error-format=junit',
+    stdout: '.reports/phpstan.xml'
+)
+junit '.reports/phpstan.xml'
+```
+
+For a command that should fail on nonzero exit while still publishing its report:
+
+```groovy
+try {
+    exec(script: 'tool --report-format=junit', stdout: '.reports/tool.xml')
+} finally {
+    junit '.reports/tool.xml'
+}
+```
 
 Command execution must be durable: agent disconnection or controller restart
 must not discard a running process, its output, or its final status. Aborting

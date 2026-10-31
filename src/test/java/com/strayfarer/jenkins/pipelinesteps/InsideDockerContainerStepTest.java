@@ -87,6 +87,34 @@ class InsideDockerContainerStepTest {
     }
 
     @Test
+    void outputFilesWorkInDockerScopesAndThroughConnectedHandles() throws Throwable {
+        sessions.then(j -> {
+            installFakeDocker(j);
+            String command = Functions.isWindows()
+                    ? "[Console]::Out.Write('docker-out'); [Console]::Error.Write('docker-err'); exit 7"
+                    : "printf docker-out; printf docker-err >&2; exit 7";
+            WorkflowRun run = build(j, """
+                    node {
+                        insideDockerContainer('files') {
+                            assert execStatus(script: "%s", stdout: 'scope/out.txt', stderr: 'scope/err.txt') == 7
+                            assert readFile('scope/out.txt') == 'docker-out'
+                            assert readFile('scope/err.txt') == 'docker-err'
+                        }
+                        def container = connectToDockerContainer('files')
+                        assert container.execStatus(script: "%s", stdout: 'handle/both.txt', stderr: 'handle/both.txt') == 7
+                        assert readFile('handle/both.txt').contains('docker-out')
+                        assert readFile('handle/both.txt').contains('docker-err')
+                        assert container.execStdout(script: 'echo handle-return', stdout: 'handle/stdout.txt') == 'handle-return'
+                        assert readFile('handle/stdout.txt').trim() == 'handle-return'
+                        container.exec(script: 'echo handle-exec', stderr: 'handle/empty.txt')
+                        assert readFile('handle/empty.txt') == ''
+                    }
+                    """.formatted(command, command));
+            j.assertBuildStatusSuccess(run);
+        });
+    }
+
+    @Test
     void containerSelectionAndConnectionDeferInspectionUntilCommandExecution() throws Throwable {
         sessions.then(j -> {
             Path log = installFakeDocker(j);

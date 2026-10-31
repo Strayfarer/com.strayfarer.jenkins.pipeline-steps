@@ -109,7 +109,11 @@ public final class ConnectToDockerContainerGlobalVariable extends GlobalVariable
         } else if (options instanceof Map<?, ?> values) {
             for (Map.Entry<?, ?> entry : values.entrySet()) {
                 if (!(entry.getKey() instanceof String key)
-                        || !(key.equals("script") || key.equals("echoScript") || key.equals("encoding"))) {
+                        || !(key.equals("script")
+                                || key.equals("echoScript")
+                                || key.equals("encoding")
+                                || key.equals("stdout")
+                                || key.equals("stderr"))) {
                     throw new IllegalArgumentException("Unsupported command option: " + entry.getKey());
                 }
                 arguments.put(key, entry.getValue());

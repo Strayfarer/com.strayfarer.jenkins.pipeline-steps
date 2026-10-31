@@ -4,6 +4,7 @@ import hudson.EnvVars;
 import hudson.FilePath;
 import hudson.Launcher;
 import hudson.model.TaskListener;
+import java.io.IOException;
 import java.io.Serial;
 import java.util.Map;
 import java.util.Set;
@@ -25,6 +26,36 @@ abstract class AbstractCommandStep extends Step {
     private final String script;
     private boolean echoScript;
     private String encoding = "UTF-8";
+    private String stdout;
+    private String stderr;
+
+    public final String getStdout() {
+        return stdout;
+    }
+
+    @DataBoundSetter
+    public final void setStdout(String stdout) {
+        this.stdout = outputPath(stdout);
+    }
+
+    public final String getStderr() {
+        return stderr;
+    }
+
+    @DataBoundSetter
+    public final void setStderr(String stderr) {
+        this.stderr = outputPath(stderr);
+    }
+
+    private static String outputPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return null;
+        }
+        if (path.isBlank()) {
+            throw new IllegalArgumentException("Output file path must not be empty");
+        }
+        return path;
+    }
 
     AbstractCommandStep(String script) {
         if (script == null) {
@@ -70,10 +101,10 @@ abstract class AbstractCommandStep extends Step {
         ResultMode mode = resultMode();
         DockerContext docker = dockerContext(context);
         if (docker == null) {
-            return commandExecution(context, script, encoding, mode, null, null);
+            return commandExecution(context, script, encoding, mode, null, null, stdout, stderr);
         }
 
-        return new DockerCommandExecution(context, docker, script, encoding, mode);
+        return new DockerCommandExecution(context, docker, script, encoding, mode, stdout, stderr);
     }
 
     private static final class DockerCommandExecution extends StepExecution {
@@ -85,15 +116,25 @@ abstract class AbstractCommandStep extends Step {
         private final String script;
         private final String encoding;
         private final ResultMode mode;
+        private final String stdout;
+        private final String stderr;
         private StepExecution active;
 
         private DockerCommandExecution(
-                StepContext context, DockerContext docker, String script, String encoding, ResultMode mode) {
+                StepContext context,
+                DockerContext docker,
+                String script,
+                String encoding,
+                ResultMode mode,
+                String stdout,
+                String stderr) {
             super(context);
             this.docker = docker;
             this.script = script;
             this.encoding = encoding;
             this.mode = mode;
+            this.stdout = stdout;
+            this.stderr = stderr;
         }
 
         @Override
@@ -142,7 +183,7 @@ abstract class AbstractCommandStep extends Step {
                 inspectionOutput = lines[1];
             }
             String os = DockerContext.osFromInspection(selected.container(), inspectionOutput);
-            active = commandExecution(getContext(), script, encoding, mode, selected, os);
+            active = commandExecution(getContext(), script, encoding, mode, selected, os, stdout, stderr);
             active.start();
         }
 
@@ -162,21 +203,72 @@ abstract class AbstractCommandStep extends Step {
     }
 
     private static StepExecution commandExecution(
-            StepContext context, String script, String encoding, ResultMode mode, DockerContext docker, String os)
+            StepContext context,
+            String script,
+            String encoding,
+            ResultMode mode,
+            DockerContext docker,
+            String os,
+            String stdout,
+            String stderr)
             throws Exception {
         FilePath workspace = context.get(FilePath.class);
         Launcher launcher = context.get(Launcher.class);
         EnvVars environment = context.get(EnvVars.class);
         DurableTask task = docker == null
-                ? CommandTaskFactory.nativeTask(script, workspace, launcher, environment, mode == ResultMode.STDOUT)
+                ? CommandTaskFactory.nativeTask(
+                        script, workspace, launcher, environment, mode == ResultMode.STDOUT, encoding, stdout, stderr)
                 : DockerCommandTaskFactory.task(
-                        docker, os, script, workspace, launcher, environment, mode == ResultMode.STDOUT);
+                        docker,
+                        os,
+                        script,
+                        workspace,
+                        launcher,
+                        environment,
+                        mode == ResultMode.STDOUT,
+                        encoding,
+                        stdout,
+                        stderr);
         DurableTaskStepAdapter taskStep = new DurableTaskStepAdapter(task);
         taskStep.setEncoding(encoding);
         taskStep.setReturnStatus(mode == ResultMode.STATUS);
         taskStep.setReturnStdout(mode == ResultMode.STDOUT);
         StepContext resultContext = mode == ResultMode.STDOUT ? new TrimmedOutputContext(context) : context;
+        String outputFailureFile = task instanceof CapturedOutputDurableTask captured
+                ? captured.outputFailureFile()
+                : task instanceof DockerProcessDurableTask container ? container.outputFailureFile() : null;
+        if (outputFailureFile != null) {
+            resultContext = new OutputFilesContext(resultContext, outputFailureFile);
+        }
         return taskStep.start(resultContext);
+    }
+
+    private static final class OutputFilesContext extends ForwardingStepContext {
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        private final String failureFile;
+
+        private OutputFilesContext(StepContext delegate, String failureFile) {
+            super(delegate);
+            this.failureFile = failureFile;
+        }
+
+        @Override
+        public void onSuccess(Object result) {
+            try {
+                if (WorkspaceTemporaryFiles.resolve(get(FilePath.class), failureFile)
+                        .exists()) {
+                    delegate.onFailure(new IOException(
+                            "Could not stream command output to the requested files; see the command log"));
+                    return;
+                }
+            } catch (Exception exception) {
+                delegate.onFailure(exception);
+                return;
+            }
+            delegate.onSuccess(result);
+        }
     }
 
     private static final class InspectionContext extends ForwardingStepContext {
