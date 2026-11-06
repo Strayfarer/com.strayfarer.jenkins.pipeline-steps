@@ -44,7 +44,7 @@
     <scmTag>HEAD</scmTag>
     <jenkins.version>2.555.3</jenkins.version>
     <maven.compiler.release>21</maven.compiler.release>
-    <durable-task.version>581.v299a_5609d767</durable-task.version>
+    <durable-task.version>686.v80ff80875b_82</durable-task.version>
     <pipeline-stage-step.version>345.va_96187909426</pipeline-stage-step.version>
     <script-security.version>1402.v94c9ce464861</script-security.version>
     <workflow-api.version>1413.v2ff1a_5e720fa_</workflow-api.version>
